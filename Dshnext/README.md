@@ -24,9 +24,13 @@ docs/        旧 commands.rs / Cargo.toml，移植时对照用
 | 前端 | React + WebView2 | 纯 Rust GPU 渲染 |
 | 分发 | 3 MB + 需系统 WebView2 | 目标单 exe ≤ 15 MB，零依赖 |
 | 内存 | 80–150 MB | 目标 ≤ 40 MB |
-| WebUI 窗口 | 内置窗口 | **交给系统浏览器**（唯一功能退步） |
+| WebUI 窗口 | 内置窗口 | **交给系统浏览器** |
+| 可访问性 | WebView2 自带 a11y 树 | **暂无**（iced 0.14 无 AccessKit） |
+| 自动化测试 | UIA 脚本（`../scripts/e2e.ps1`） | `iced_test`（框架内模拟） |
 | 数据目录 | `%LOCALAPPDATA%\DshDesk\` | 同一个，完全兼容 |
+
+取舍清单见 [DESIGN.md §12](DESIGN.md)。
 
 ## 下一步
 
-先做 DESIGN.md §10 的**阶段 0**：验证中文渲染、中文输入法、空闲占用三件事。任一不达标就终止本方向、留在 Tauri 版。
+先做 DESIGN.md §10 的**阶段 0**，验四件事：中文渲染、中文输入法、空闲占用、软件渲染回退下的中文。任一不达标就终止本方向、留在 Tauri 版。

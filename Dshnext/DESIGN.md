@@ -72,8 +72,24 @@ DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端�
 
 ### 依赖清单（拟）
 
+iced 0.14.0（2025-12-07 发布，crates.io 当前 max_version）。**默认 features 是**：
+```
+default = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "linux-theme-detection", "x11", "wayland"]
+```
+
 ```toml
-iced         = { version = "0.14", features = ["wgpu", "advanced", "image", "svg", "tokio"] }
+[dependencies]
+iced = { version = "0.14", default-features = false, features = [
+    "wgpu",              # GPU 渲染（含全部后端；Windows 走 DX12/Vulkan）
+    "tiny-skia",         # 软件回退：无可用 GPU 时仍能显示（Slint 那条路踩的坑，这里要避开）
+    "crisp",             # 默认开，像素对齐，小字更锐
+    "advanced-shaping",  # ★ 中文必须！见 §6
+    "advanced",           # 访问底层 widget/renderer API（自造 modal 需要）
+    "canvas",            # 图标兜底手绘、自定义绘制
+    "svg",               # 描边图标
+    "tokio",             # 复用后端的 tokio 运行时
+    "thread-pool",
+] }
 tokio        = { version = "1", features = ["process", "io-util", "time", "sync", "macros"] }
 reqwest      = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 serde        = { version = "1", features = ["derive"] }
@@ -81,8 +97,18 @@ serde_json   = "1"
 zip          = { version = "2", default-features = false, features = ["deflate"] }
 dirs         = "5"
 futures-util = "0.3"
-open         = "5"      # 替代 tauri-plugin-opener
+open         = "5"       # 替代 tauri-plugin-opener
+
+[dev-dependencies]
+iced_test = "0.14"       # 端到端测试，见 §9
 ```
+
+**刻意不开的 features**：
+- `unconditional-rendering` —— 会退回「每个 runtime event 都出帧」，直接毁掉空闲零占用（§8）
+- `web-colors` —— 默认开启，但 iced 自己的注释说这是为了匹配浏览器的 sRGB-linear 混色、并标注为 "broken"。**我们不是网页，应显式关掉**（用 `default-features = false` 已排除），让阴影/半透明按物理正确方式混合
+- `basic-shaping` —— 与 `advanced-shaping` 互斥语义，开了会让默认 shaping 退回 Basic（中文豆腐块）
+- `debug` / `time-travel` / `hot` / `sysinfo` —— 开发期可临时开 `debug`（带 devtools），release 不带
+
 
 ---
 
@@ -279,14 +305,30 @@ pub const DARK:  Palette = Palette { /* #060607 / #0e0e10 / #5b76ff / #2fd6b3 ..
 
 ### 文本渲染（最容易踩的坑）
 
-cosmic-text 0.19 是 Rust 的 CJK 事实标准：shaping 用 HarfRust，fallback 表直接抄 Chromium/Firefox 并按 locale 区分 Han（避免中日韩字形串味）。但有一条**必须显式处理**：
+cosmic-text 是 Rust 的 CJK 事实标准：shaping 用 HarfRust，fallback 表直接抄 Chromium/Firefox 并按 locale 区分 Han（避免中日韩字形串味）。
 
-> iced 的 `text::Shaping` 历史默认是 `Basic`（不做复杂 shaping 与 fallback）。中文**必须**用 `Advanced` 或 0.14 新增的 `Auto`，忘了就是满屏豆腐块或字形错乱。
+**关键事实（已核对 iced_core 0.14 文档）**：`text::Shaping` 的默认值**由编译期 feature 决定**，不是固定的：
 
-对策：
-- 在 `ui/mod.rs` 里封装 `fn text(s) -> Text` 统一设 `.shaping(Shaping::Advanced)`，**全项目禁止直接用 `iced::widget::text`**（可用 clippy 规则或 review 约束）。
-- **内嵌字体**而不是依赖系统字体：`assets/fonts/` 放思源黑体 / Noto Sans SC 的**子集化**版本（常用 3500 字 + 拉丁 + 符号，约 1–2 MB），`iced::Settings { fonts: vec![include_bytes!(..)] }` 加载。这样在任何 Windows 上观感一致，也避免「用户系统没装雅黑」。
-- 等宽（路径、版本号、日志、PID）用 Cascadia Mono 子集或 JetBrains Mono。
+| feature 状态 | `Shaping` 默认值 | 中文表现 |
+|---|---|---|
+| 都不开 | `Auto` | ✅ 可用（纯 ASCII 走快路径，否则自动转 advanced） |
+| 开 `basic-shaping` | `Basic` | ❌ **豆腐块 / 字形错乱**（无 shaping、无 fallback） |
+| 开 `advanced-shaping` | `Advanced` | ✅ 最稳（始终完整 shaping + fallback） |
+
+三个变体的官方描述：
+- `Basic` —— "No shaping and no font fallback"，很便宜但「will not display complex scripts properly」
+- `Advanced` —— "Advanced text shaping and font fallback"，文档警告「Advanced shaping is expensive! You should only enable it when necessary」
+- `Auto` —— "Auto-detect the best shaping strategy from the text"，ASCII 走 basic，其余走 advanced
+
+**决策**：开 `advanced-shaping`，让全局默认就是 `Advanced`。
+
+理由：这是个中文界面，几乎每个字符串都含中文，`Auto` 的探测收益接近零而多一层判断；更重要的是**默认值安全**——万一某处漏了显式设置，`Advanced` 兜底不会出豆腐块。代价是纯 ASCII 文本（路径、版本号、日志）也走贵路径，但启动器的文本量是几百个字符级别，不是编辑器，可忽略。
+
+补充纪律（双保险）：
+- 在 `ui/mod.rs` 封装 `fn text(s) -> Text`，显式 `.shaping(Shaping::Advanced)`，**全项目禁止直接用 `iced::widget::text`**
+- **内嵌字体**而不是依赖系统字体：`assets/fonts/` 放思源黑体 / Noto Sans SC 的**子集化**版本（常用 3500 字 + 拉丁 + 符号，约 1–2 MB），用 `iced::Settings { fonts }` 加载。保证任何 Windows 上观感一致，也避免「用户系统没装雅黑」
+- 等宽（路径、版本号、日志、PID）用 Cascadia Mono 或 JetBrains Mono 子集；**确认所选字体带 `tnum`**，否则等宽数字对不齐（上一代靠 CSS `font-variant-numeric` 解决，iced 侧无此开关，得靠字体本身）
+
 
 ---
 
@@ -400,18 +442,60 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 | 中文渲染 | 无豆腐块、无字形错乱、小字清晰 | 六页目检 |
 | 中文输入法 | 三处输入框能打中文、候选框位置正确 | 手动测 |
 | 视觉不退步 | 与 Tauri 版并排对比，软阴影/圆角/留白/过渡在位 | 截图对比 |
-| 功能对等 | e2e 全流程通过（新建→启动→日志→停止→删除、插件装卸） | 移植 `../scripts/e2e.ps1`（UIA 需换成 iced 的可访问性支持，见下） |
+| 功能对等 | 全流程通过（新建→启动→日志→停止→删除、插件装卸） | `iced_test`，见下 |
+
+### 测试方案变更：`iced_test` 取代 UIA 脚本
+
+**重要发现**：iced 0.14 **没有 AccessKit / 任何可访问性集成**（已核对 0.14.0 的 `Cargo.toml`：无 `accesskit` feature、无该依赖、workspace 里也没有）。这意味着：
+
+> **上一代的 `e2e.ps1` 会完全失效。** 那套脚本靠 UI Automation 按名字找按钮、Invoke 点击、读 Text 元素断言——iced 窗口在 UIA 树里将是一个空壳（和上一代那个 WebView2 未就绪时「nav buttons: 0」的情形一样，但这次是永久的）。
+
+替代方案是官方的 **`iced_test`**（0.14，作者本人维护），它在**框架内部**模拟交互，比 UIA 更可靠：
+
+```rust
+// 按控件包含的文字选中并点击（&str 实现了 Selector trait）
+let mut ui = simulator(app.view());
+let _ = ui.click("新建版本");
+ui.typewrite("e2e-test");
+let _ = ui.click("创建");
+
+// 把模拟产生的消息喂回 update，然后断言状态
+for message in ui.into_messages() {
+    app.update(message);
+}
+assert!(app.profiles.iter().any(|p| p.name == "e2e-test"));
+
+// 断言渲染结果：重建 view 再 find
+let ui = simulator(app.view());
+assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
+```
+
+可用 API（已核对 `iced_test` 文档索引）：
+- `simulator(view)` → `Simulator`
+- `Simulator::click(selector)` / `typewrite(text)` / `tap_key(key)` / `find(selector)` / `into_messages()` / `snapshot()`
+- `Selector` trait，`&str` 的实现是「按控件包含的文本选中」
+- `screenshot(program, theme, viewport, scale, duration)` —— 截图，可做视觉回归
+- `emulator` 模块 —— headless 运行整个 app
+- `ice` 模块 —— 可共享的测试用例格式；配 `iced_tester`（带录制器，依赖 `rfd` 原生文件对话框）可交互式录制测试
+
+好处：**比 UIA 脚本更快更稳**（无窗口焦点争夺、无 DPI 坐标换算、无「WebView2 未就绪导致空树」这类竞态——上一代为此折腾了好几轮）；坏处：它测的是「view 树 + update 逻辑」，**不覆盖真实 GPU 渲染与真实 IME**，那两项仍需手动验证（已在上表列为独立条目）。
+
+按 id 选中控件的 API 未在索引页确认（可能在 `iced_selector` 里），**未验证**；若只能按文本选中，需注意同文本控件的歧义（如多行都有「删除」按钮）——上一代 UIA 脚本已踩过这个坑，靠「按行标签定位 + 纵向坐标匹配」解决，`iced_test` 侧需要等价手段，可能要给控件加唯一文案或用 `iced_selector`。
+
 
 ### 已知风险与预案
 
 | 风险 | 预案 |
 |---|---|
-| iced 的可访问性（AccessKit）支持不足，`e2e.ps1` 的 UIA 驱动失效 | 改为「进程/文件系统断言 + 截图目检」；或在 app 内加一个隐藏的测试用命令通道 |
+| **无 AccessKit：屏幕阅读器不可用，且 UIA 自动化失效** | 自动化改用 `iced_test`（见上）。可访问性本身**本次接受退步**并在 README 声明——上一代 WebView2 自带完整 a11y 树，这是原生化的隐性代价。若将来必需，需等 iced 支持或自行接 AccessKit |
 | 中文 IME 实测有问题 | 若 iced 0.14 的 IME 不达标，**回退到 Tauri 版**（IME 是硬需求，不可妥协） |
 | 空闲 CPU 降不下来 | 逐个排查订阅；若是框架层面无解，本方向失败 |
 | 内存降不到 40 MB | 可放宽到 60 MB（仍显著优于 WebView2）；若 > 80 MB 则收益不成立 |
-| iced 0.14 已 9 个月无新版，遇到框架 bug 无人修 | 视严重程度：小问题自己 fork 打补丁；阻塞性问题考虑 §2 的 GPUI 备选（gpui-component 有 60+ 现成组件，但依赖第三方快照 crate） |
+| iced 0.14 已 9 个月无新版（0.13→0.14 隔 15 个月），遇框架 bug 无人修 | 视严重程度：小问题自己 fork 打补丁；阻塞性问题考虑 §2 的 GPUI 备选。注意 master 已是 `0.15.0-dev`，可关注但**不用 git 依赖**（API 会破坏性变更） |
+| 无可用 GPU 的机器（虚拟机、远程桌面、老显卡） | 已开 `tiny-skia` 软件回退——**且 iced 的软渲染器不像 Slint 那样只支持西文**，中文仍可显示（待阶段 0 实测确认） |
 | SVG 图标无法动态着色 | 改 `canvas` 手绘（图标简单）或每主题存一份 |
+| `blur`/亚克力窗口效果 | iced 的 `window::Settings::blur` **在 Windows 上是 no-op**（文档明确只支持 macOS/Linux）。设计里不依赖毛玻璃，无影响 |
+
 
 ### 失败退出条件
 
@@ -430,36 +514,39 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 分阶段，每阶段都有可验证产出，早失败早退出。
 
 **阶段 0：可行性验证（最关键，先做）**
-1. `cargo new`，加 iced 依赖，跑起一个空窗口
-2. **立刻验三件最可能翻车的事**：
-   - 内嵌中文字体 + `Shaping::Advanced`，渲染一段中文——看是否清晰无豆腐块
-   - 一个 `text_input`，用微软拼音打中文——看 IME 候选框位置与 preedit
-   - 空窗口挂 60s，看空闲 CPU/GPU/内存
-3. **若这三项任一不达标，本方向就地终止**，不进入阶段 1
+1. `cargo new`，加 iced 依赖（按 §2 的 feature 清单，**注意 `default-features = false`**），跑起一个空窗口
+2. **立刻验四件最可能翻车的事**：
+   - **中文渲染**：内嵌字体 + `advanced-shaping`，渲染一段中文 + 一段等宽数字——看是否清晰、无豆腐块、数字是否对齐
+   - **中文输入法**：一个 `text_input`，用微软拼音打中文——看候选框位置与 preedit 显示
+   - **空闲占用**：空窗口挂 60s，看 CPU/GPU/内存三项
+   - **软件回退**：`WGPU_BACKEND=noop` 或在无 GPU 的 VM 里跑，确认 tiny-skia 路径下中文仍正常（避开 Slint 那个「软渲染仅西文」的坑）
+3. 顺手验一个视觉关键项：**一张带软阴影的圆角卡片**，对比 Tauri 版截图，确认 `Shadow` 的观感能到位
+4. **若这四项任一不达标，本方向就地终止**，不进入阶段 1
 
 **阶段 1：视觉地基**
-4. `theme.rs` 两套令牌（照抄 CSS 色值）
-5. `ui/card.rs` + `ui/button.rs`：软阴影卡片 + 四类按钮，做一个 demo 页并排对比 Tauri 版截图
-6. `ui/anim.rs`：hover 过渡 + 订阅生命周期，验证动画结束后空闲 CPU 回到 0
+5. `theme.rs` 两套令牌（照抄 `../src/styles.css` 的色值）
+6. `ui/card.rs` + `ui/button.rs`：软阴影卡片 + 四类按钮，做一个 demo 页并排对比 Tauri 版截图
+7. `ui/anim.rs`：hover 过渡 + 订阅生命周期，**验证动画结束后空闲 CPU 回到 0**（这条不过关就等于白做）
+
 
 **阶段 2：后端接入**
-7. `core/event.rs`，六个模块的 Emitter → channel 机械替换
-8. `Subscription::run` 接 channel，事件进 `update()`
-9. 环境探测与配置读写打通（最简单的两条链路，验证端到端）
+8. `core/event.rs`，六个模块的 Emitter → channel 机械替换
+9. `Subscription::run` 接 channel，事件进 `update()`
+10. 环境探测与配置读写打通（最简单的两条链路，验证端到端）
 
 **阶段 3：页面移植**（按依赖顺序）
-10. 环境页（只读展示 + 安装动作，验证进度事件流）
-11. 版本管理页（CRUD + 模态，验证 7.2）
-12. 首页（hero + meta 带 + 启动/停止，验证进程管理与日志事件）
-13. 控制台页（验证 7.3 大文本性能）
-14. 插件管理页（市场检索 + 装卸）
-15. 设置页（表单 + 主题切换）
+11. 环境页（只读展示 + 安装动作，验证进度事件流）
+12. 版本管理页（CRUD + 模态，验证 §7.2）
+13. 首页（hero + meta 带 + 启动/停止，验证进程管理与日志事件）
+14. 控制台页（验证 §7.3 大文本性能）
+15. 插件管理页（市场检索 + 装卸）
+16. 设置页（表单 + 主题切换；注意 `open_mode` 项已移除，见 §5）
 
 **阶段 4：收尾**
-16. 图标全套、toast、空状态
-17. 性能实测对照 §9 表格，逐项签字
-18. e2e 移植或替代方案
-19. 打包（单 exe + 可选 NSIS）、README、与 Tauri 版并排截图对比
+17. 图标全套、toast、空状态
+18. `iced_test` 写全流程用例（§9）
+19. 性能实测对照 §9 表格，逐项签字
+20. 打包（单 exe + 可选 NSIS）、README、与 Tauri 版并排截图对比
 
 ---
 
@@ -469,6 +556,46 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 - **数据完全兼容**：共用 `%LOCALAPPDATA%\DshDesk\`（config.json、runtime、home/profiles），两个版本可互换使用，用户无感。
   - 注意：`config.json` 里的 `open_mode` 字段在 Dshnext 中被忽略（§5），反序列化需容忍未知/无用字段（`serde(default)` 已在用）。
 - **术语与交互保持一致**：页面名、按钮文案、快捷键（Ctrl+1..6）都不变，降低学习成本。
+
+---
+
+## 12. 已知取舍清单
+
+原生化不是纯赚，这四项是明确的退步或未解项，写在这里避免以后被当成 bug：
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| **内置 WebUI 窗口** | ❌ 移除 | 改为系统浏览器打开（§5）。设置里的「Web 界面打开方式」选项一并移除 |
+| **可访问性（屏幕阅读器）** | ❌ 退步 | iced 0.14 无 AccessKit 集成。上一代靠 WebView2 白送完整 a11y 树，原生版暂无。需在 README 声明 |
+| **UIA 自动化脚本** | ⚠️ 换方案 | `../scripts/e2e.ps1` 失效，改用 `iced_test`（§9）。截图脚本 `shot.ps1`/`capture-pages.ps1` 仍可用（PrintWindow 与框架无关） |
+| **毛玻璃/亚克力窗口** | — | iced 的 `blur` 在 Windows 上是 no-op；本设计不依赖该效果，无影响 |
+
+反过来，明确的收益：
+
+| 项 | 收益 |
+|---|---|
+| 分发 | 单 exe，不再要求目标机器有 WebView2 runtime |
+| 空闲占用 | reactive rendering，不重绘就不出帧 |
+| 软阴影成本 | SDF shader 解析式求值，比 WPF 的每帧 GPU 模糊便宜得多，视觉不用为性能让步 |
+| 类型安全 | 后端事件从 JSON 变成 Rust 枚举，字段错误编译期就报 |
+| 冷启动 | 无 WebView2 runtime 初始化 |
+| 测试 | `iced_test` 在框架内模拟，比 UIA 快且无焦点/DPI/竞态问题 |
+
+---
+
+## 附：本文档中未验证的事项
+
+写明以免被当成已确认的事实：
+
+- iced 软件渲染器（tiny-skia）对中文的支持程度 —— 阶段 0 验证
+- iced 0.14 中文 IME 的实际体验 —— 阶段 0 验证
+- `Background::Gradient` 的 API 细节（主按钮竖向渐变） —— 阶段 1 验证
+- `svg` widget 能否动态换色 —— 阶段 1 验证
+- `iced_test` 是否支持按 id 选控件（`iced_selector` 未读） —— 阶段 4 前需确认
+- `window::Settings::platform_specific` 里 Windows 相关字段（drag-drop、skip_taskbar 等） —— docs.rs 是 Linux 构建，未列出
+- `scrollable` 的 culling 对上百条插件列表是否够用 —— 阶段 3 实测
+- Tauri/WebView2 的内存基线具体数字（80–150 MB 是估计，未实测对照）
+
 
 
 
