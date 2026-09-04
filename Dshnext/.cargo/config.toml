@@ -1,0 +1,12 @@
+# 让 `cargo build --release` 产出的 exe 真正零运行时依赖。
+#
+# 默认 MSVC 构建会动态链接 VCRUNTIME140.dll（VC++ 运行库）和一批
+# api-ms-win-crt-* (UCRT) —— 这些**不是** Windows 自带组件，干净 Win10 VM
+# 上没装 VC++ 可再发行组件就直接起不来，与「单 exe 零依赖」的目标冲突。
+# `+crt-static` 把 CRT 静态编进 exe，dumpbin /DEPENDENTS 只剩 kernel32/user32/
+# gdi32/ws2_32 这类系统 DLL。代价 +0.21 MB（17.10 → 17.31 MB），仍在 ≤ 18 MB 内。
+#
+# 注意：rustflags 是全局的，debug 构建与 `cargo test` 也会静态链接（功能不受影响，
+# 只是链接稍慢）。若临时要动态 CRT 调试，命令行加 `RUSTFLAGS=""` 覆盖即可。
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]

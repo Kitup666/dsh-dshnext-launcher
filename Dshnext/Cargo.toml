@@ -39,10 +39,15 @@ open = "5"
 
 [profile.release]
 opt-level = 3
-# fat 而不是 thin：接完后端与六个页面后 thin 出 18.78 MB、fat 出 17.35 MB
-# （省 1.4 MB），代价是全量 release 构建从 1 分钟涨到 5 分钟。日常开发走 dev，
-# 只有出包才 --release，这个交换划得来。
-lto = "fat"
+# 阶段 4 实测修正：在 codegen-units=1 前提下，lto 对体积几乎无益——
+# false 出 17.10 MB、fat 出 17.35 MB（fat 反而大 0.25 MB，因为整 crate 单
+# 编译单元时跨单元内联本就没多少可做，激进内联还撑大代码），而 fat 把全量
+# release 构建从 27s 拖到 5min。首帧耗时与 lto 无关（阶段 4 排查过）。
+# 故定 lto=false：更小、构建快 10 倍，无运行时代价。
+lto = false
 codegen-units = 1
 strip = true
 panic = "abort"
+
+[dev-dependencies]
+iced_test = "0.14.0"

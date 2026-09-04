@@ -116,7 +116,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
 
     list = list.push(widgets::list_row(
         Some(widgets::icon_badge(
-            icon::icon::<Message>(icon::ENV, 18.0, pal.text_2),
+            icon::icon::<Message>(icon::NODE, 18.0, pal.text_2),
             pal,
         )),
         column![
@@ -214,7 +214,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
 
     list = list.push(widgets::list_row(
         Some(widgets::icon_badge(
-            icon::icon::<Message>(icon::LAUNCH, 18.0, pal.text_2),
+            icon::icon::<Message>(icon::HARNESS, 18.0, pal.text_2),
             pal,
         )),
         column![
@@ -238,7 +238,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
     list = list.push(widgets::divider(pal));
     list = list.push(widgets::list_row(
         Some(widgets::icon_badge(
-            icon::icon::<Message>(icon::PLUGINS, 18.0, pal.text_2),
+            icon::icon::<Message>(icon::DOWNLOAD, 18.0, pal.text_2),
             pal,
         )),
         column![

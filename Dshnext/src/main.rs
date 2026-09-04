@@ -19,13 +19,19 @@ mod theme;
 mod ui;
 mod update;
 
+#[cfg(test)]
+mod tests;
+
 use app::{Dshnext, Mode, Shot};
 use pages::Page;
 use std::time::Duration;
 
 fn main() -> iced::Result {
     env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("dshnext=info,iced_wgpu=info,wgpu_core=warn"),
+        // iced_wgpu 默认 info 会把整个适配器列表打出来；这台机器枚举出 6 个重复的
+        // RTX 4060，光格式化+写这坨就几百 ms（GUI 进程写 stderr 更慢）。诊断后端选择
+        // 时临时 RUST_LOG=iced_wgpu=info 再打开。
+        env_logger::Env::default().default_filter_or("dshnext=info,iced_wgpu=warn,wgpu_core=warn"),
     )
     .init();
 

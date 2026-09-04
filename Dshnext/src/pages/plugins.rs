@@ -217,9 +217,16 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
             m.description.clone()
         };
 
+        // 来源徽章：第三方商店目录用购物袋，npm 关键词检索用下载箭头
+        // （与上一代 `origin === "catalog" ? "market" : "download"` 一致）。
+        let badge = if m.origin == "catalog" {
+            icon::MARKET
+        } else {
+            icon::DOWNLOAD
+        };
         col = col.push(widgets::list_row(
             Some(widgets::icon_badge(
-                icon::icon::<Message>(icon::VERSIONS, 18.0, pal.text_2),
+                icon::icon::<Message>(badge, 18.0, pal.text_2),
                 pal,
             )),
             column![

@@ -76,6 +76,9 @@
 17. **`opaque()` 必须包在模态遮罩上**，否则点遮罩会穿透到下层按钮。**ESC 关模态只能走全局键盘订阅**——覆盖层拿不到键盘焦点。
 18. **`pick_list` 的 `L: Borrow<[T]>` 接受 `Vec<T>`**，不用为了凑 `&'a [T]` 去 leak。
 19. **`Text<'a>` 的 `IntoFragment` 参数别钉 `'static`**（同第 9 条），页面里到处是 `format!` 出来的串。
+20. **`windows_subsystem="windows"`（GUI 子系统）会让 wgpu DX12 首帧慢 ~1.1 s。** 同一份代码只改子系统标志：控制台子系统 136 ms、GUI 子系统 1270 ms（本机 RTX 4060，驱动枚举出 6 个重复适配器）。慢在 `init-closure → 首次 view` 之间的 compositor 建设备，与 LTO/日志/内容复杂度都无关。换 Vulkan(497)/GL(456) 快些但不通用，`Vulkan,DX12` 掩码反而更慢（仍枚举 DX12）。**测首帧必须用产品同款子系统**——阶段 0 探针没设这个属性，那个 145 ms 是控制台数字，误导了一版。
+21. **`iced_test` 的 `&str` 选择器是精确相等（`content == self`），不是子串**；`Selector` 对 `widget::Id` 也有实现（控件设 `.id()` 即可按 id 选）。`click` 要求目标 `visible_bounds` 非空（滚出视口点不到），`find` 不要求。禁用按钮上的文字被点会冒泡到外层 `mouse_area`——空草稿点模态「创建」不触发 `DialogConfirm`，但会产生遮罩的 `CloseDialog`，所以断言要写「没有 DialogConfirm」而不是「没有任何消息」。喂 `Start/Stop` 前必须先 `bridge::init()`（update 里同步取 `bridge::sink()`）。
+22. **「零运行时依赖」要用 `dumpbin /DEPENDENTS` 验，别信「Rust 肯定静态」的直觉。** 默认 MSVC 构建动态依赖 `VCRUNTIME140.dll`（VC++ 运行库）+ 一批 `api-ms-win-crt-*`（UCRT），干净裸机上没有就直接起不来。解法：`.cargo/config.toml` 里 `[build] rustflags = ["-C","target-feature=+crt-static"]`，之后只剩系统 DLL（代价 +0.21 MB）。注意 rustflags 是全局的，`cargo test`/debug 也会静态链（功能无碍，链接稍慢）；临时要动态 CRT 就命令行 `RUSTFLAGS=""` 覆盖。
 
 ## Dshnext 后端复用
 

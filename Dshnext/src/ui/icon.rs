@@ -10,12 +10,19 @@
 use iced::widget::svg::{self, Handle};
 use iced::{Color, Element, Length, Theme};
 
+// 侧边栏六项
 pub const LAUNCH: &[u8] = include_bytes!("../../assets/icons/launch.svg");
 pub const VERSIONS: &[u8] = include_bytes!("../../assets/icons/versions.svg");
 pub const PLUGINS: &[u8] = include_bytes!("../../assets/icons/plugins.svg");
 pub const ENV: &[u8] = include_bytes!("../../assets/icons/env.svg");
 pub const CONSOLE: &[u8] = include_bytes!("../../assets/icons/console.svg");
 pub const SETTINGS: &[u8] = include_bytes!("../../assets/icons/settings.svg");
+// 行内徽章。环境页三行、插件市场两种来源各有专属图形：共用一个图标会让
+// 「Node / dsh / pnpm」看起来是同一类东西（阶段 3 就是这样，全用 ENV/LAUNCH 顶着）。
+pub const NODE: &[u8] = include_bytes!("../../assets/icons/node.svg");
+pub const HARNESS: &[u8] = include_bytes!("../../assets/icons/harness.svg");
+pub const DOWNLOAD: &[u8] = include_bytes!("../../assets/icons/download.svg");
+pub const MARKET: &[u8] = include_bytes!("../../assets/icons/market.svg");
 
 /// 以指定颜色绘制一个图标。
 pub fn icon<'a, Message: 'a>(data: &'static [u8], size: impl Into<Length>, color: Color) -> Element<'a, Message> {

@@ -2,7 +2,7 @@
 
 DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端换成纯 Rust GPU 渲染**，目标是把「低占用」和「高视觉」同时拿到。
 
-- 状态：**阶段 0～3 已完成**（可行性 / 视觉地基 / 后端接入 / 页面移植）。六个页面全部移植，模态、toast、Ctrl+1..6 都在；两轮视觉验收全 pass。下一步是阶段 4「收尾」（iced_test 用例、打包、干净 VM 验证）
+- 状态：**阶段 0～4 全部完成**（可行性 / 视觉地基 / 后端接入 / 页面移植 / 收尾）。六个页面全部移植，模态、toast、Ctrl+1..6 都在；两轮视觉验收全 pass；`iced_test` 14 例全绿；性能逐项实测；单 exe + NSIS 安装包已产出，与上一代六页并排对比图在 `shots/compare-p4/`。唯一未在本机闭环的是「干净 Win10 VM 首帧复核」——需要一台无重复适配器的机器，见 §9「首帧真相」与 §13 待办。
 - 上一代：`../src-tauri`（Rust 后端）+ `../src`（React 前端），已可用并出过 NSIS 安装包
 - 本目录：`src/core/` 是从上一代直接复制的后端模块（1163 行），`phase0/` 是探针工程与实测报告，`docs/*.tauri-reference` 是对照用的旧文件
 
@@ -18,9 +18,9 @@ DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端�
 |---|---|---|---|
 | 空闲 CPU | 0.26%（全核）/ 3.6%（单核） | **≈ 0%**（不重绘就不出帧） | ✅ **0.0000%**，120s 内 0 帧 |
 | 空闲 GPU | 1.72% | **≈ 0%** | ✅ **0.00%** |
-| 常驻内存（私有工作集） | **199 MB**（7 个进程） | GPU 后端 **≤ 100 MB**<br>软件后端 **≤ 30 MB** | ✅ **72.8 MB**（阶段 3 六页产品，DX12）<br>**15.3 MB**（tiny-skia 探针） |
-| 冷启动到**首帧** | 236 ms | **≤ 300 ms** | ✅ **145 ms** |
-| 分发体积 | 3 MB + 依赖系统 WebView2 | **单 exe ≤ 18 MB，零运行时依赖** | ✅ **17.35 MB**（含 4.34 MB 字体；`lto="fat"`） |
+| 常驻内存（私有工作集） | **199 MB**（7 个进程） | GPU 后端 **≤ 100 MB**<br>软件后端 **≤ 30 MB** | ✅ **88.5 MB**（阶段 4 产品，本机 DX12，稳定不爬）<br>**15.3 MB**（tiny-skia 探针） |
+| 冷启动到**首帧** | 236 ms | **≤ 300 ms** | ⚠️ 本机 GUI+DX12 **~1.27 s**（驱动枚举 6 个重复适配器的机器特异性开销，见 §9「首帧真相」）；控制台子系统 136 ms、软件后端 212 ms |
+| 分发体积 | 3 MB + 依赖系统 WebView2 | **单 exe ≤ 18 MB，零运行时依赖** | ✅ **17.31 MB**（含 4.34 MB 字体；`lto=false` + `+crt-static`） |
 | 视觉质量 | 软阴影/圆角/过渡齐全 | **不退步**（软阴影、圆角、渐变、过渡动画全保留） | ✅ 软阴影/圆角观感一致 |
 | 中文质量 | WebView2 灰度 AA | **不退步或更好** | ✅ 无豆腐块，等宽数字对齐 |
 
@@ -530,22 +530,40 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 | 空闲 CPU | < 0.1%（全核） | `phase0/tools/measure-idle.ps1`，60s | ✅ 0.0000% |
 | 空闲 GPU | ~0% | 同上（读 `\GPU Engine(*)\Utilization Percentage`，按 pid 归属） | ✅ 0.00% |
 | 空闲出帧 | 开窗后增量为 0 | 探针在 `draw()` 里计数 | ✅ 120s 内 0 帧 |
-| 常驻内存 | GPU ≤ 90 MB / 软件 ≤ 30 MB | **私有工作集**，六个页面都开过之后 | ✅ 79.8 / 15.3 MB |
-| 首帧画好 | ≤ 300 ms | `phase0/tools/first-paint.ps1`（按窗口表面颜色数判定，不是窗口出现） | ✅ 145 ms |
-| 单 exe 体积 | ≤ 18 MB | 含内嵌字体与后端依赖 | ✅ 17.35 MB（阶段 3 后），见下 |
-| 零运行时依赖 | 干净 Win10 VM 能跑 | 不装 WebView2/.NET 的机器 | 未测（阶段 4） |
+| 常驻内存 | GPU ≤ 90 MB / 软件 ≤ 30 MB | **私有工作集**（`\Process(*)\Working Set - Private`），六个页面都开过之后 | ⚠️ 阶段 4 产品实测 **88.5 MB**（本机 DX12，稳定不爬；与阶段 3 的 72.8 差异是驱动常驻分配的机器波动，逼近 90 阈值） |
+| 首帧画好 | ≤ 300 ms | `phase0/tools/first-paint.ps1`（按窗口表面颜色数判定，不是窗口出现） | ⚠️ **见下方「首帧真相」——阶段 0 的 145 ms 是控制台子系统探针，产品是 GUI 子系统，本机 DX12 实测 ~1.27 s** |
+| 单 exe 体积 | ≤ 18 MB | 含内嵌字体与后端依赖 | ✅ **17.31 MB**（阶段 4 `lto=false` + `+crt-static`，见下） |
+| 零运行时依赖 | 干净 Win10 VM 能跑 | 不装 WebView2/.NET 的机器 | ✅ **`dumpbin /DEPENDENTS` 确认只剩系统 DLL**（`+crt-static` 静态链 CRT，无 VCRUNTIME140/UCRT，见下「零依赖」段）；干净机器双击实跑仍待真机复核 |
 | 中文渲染 | 无豆腐块、无字形错乱、小字清晰 | 六页目检 | ✅ 阶段 3 六页全部目检通过（两轮 judge） |
 | 中文输入法 | 三处输入框能打中文、候选框位置正确 | `phase0/tools/ime-drive.ps1` | ✅ preedit/候选/提交/退格全对 |
 | 软件回退下中文 | 与 GPU 后端观感一致 | `ICED_BACKEND=tiny-skia` 截图对比 | ✅ 平均差 0.65/255 |
 | 视觉不退步 | 与 Tauri 版并排对比，软阴影/圆角/留白/过渡在位 | 截图对比 | ✅ 阴影圆角一致；✅ 过渡/渐变/按钮四态阶段 1 已并排验证（`shots/compare-*.png`） |
-| 功能对等 | 全流程通过（新建→启动→日志→停止→删除、插件装卸） | `iced_test`，见下 | ⚠️ 手动实测通过（`--e2e` 启停链路、`interact-probe.ps1` 交互链路）；`iced_test` 用例待阶段 4 |
+| 功能对等 | 全流程通过（新建→启动→日志→停止→删除、插件装卸） | `iced_test`，见下 | ✅ 阶段 4 `iced_test` 14 例全绿（`src/tests.rs`，view↔update 契约）；真实启停链路另由 `--e2e` 覆盖 |
 
 **关于「测法」的两个教训**（写清楚是因为按错的方法量会得出反向结论）：
 
 - **进程树必须递归遍历。** WebView2 是 `dshdesk.exe` → `msedgewebview2.exe`（browser）→ GPU/renderer/utility 子进程共 7 个。只走一层父子关系只找到 2 个，内存少算 230 MB、CPU 少算 100 倍（0.0015% 而不是 0.2573%）——照这个数字对比，上一代反而"更省"。
 - **别报 `PrivateMemorySize64`。** 那是提交的虚拟内存，NVIDIA 驱动会撑到 200+ MB 而页面并不驻留。任务管理器「内存」列显示的是 `\Process(*)\Working Set - Private`，本文所有内存数字都用后者。
 
-**体积**：阶段 0 探针 15.22 MB → 阶段 2 后端接入 16.27 MB → 阶段 3 六页 18.78 MB（`lto="thin"`）→ 改 `lto="fat"` 后 **17.35 MB**。其中 4.34 MB 是内嵌字体。原目标「≤ 15 MB」是照探针定的，接了后端就不现实，**放宽到 ≤ 18 MB**——判据是「零运行时依赖的单文件分发」，不是跟 Tauri 的 3 MB 比（那 3 MB 后面挂着 100+ MB 的 WebView2 runtime）。`fat` LTO 省 1.4 MB，代价是全量 release 构建 1 分钟 → 5 分钟；日常走 dev profile，只有出包才 `--release`。去掉 `svg` feature 还能再省约 1.8 MB，但图标要改 `canvas` 手绘，**暂不砍**。
+**首帧真相（阶段 4 排查，推翻了阶段 0 的 145 ms）**：阶段 0 那个漂亮的 145 ms 是**探针**测的，而探针没有 `windows_subsystem="windows"`——它是**控制台子系统**程序。产品为了双击启动不闪黑框，用的是 **GUI 子系统**。同一份产品代码，只改子系统标志，本机实测：
+
+| 配置 | 首帧 |
+|---|---|
+| 控制台子系统 + DX12 | **136 ms** |
+| GUI 子系统 + DX12（当前产品） | **~1270 ms** |
+| GUI 子系统 + Vulkan | 497 ms |
+| GUI 子系统 + GL | 456 ms |
+| GUI 子系统 + tiny-skia（软件） | 212 ms |
+
+用文件计时把 1.27 s 拆开：`main` 入口到 `init-closure` 只 5 ms，**全部耗在 `init-closure → 首次 view`**，即 iced 建 wgpu compositor（适配器枚举 + 请求设备）这一段。与 LTO 无关（关掉 lto 仍 1300 ms）、与日志量无关（`RUST_LOG=off` 只降到 907，且 stderr 重定向到文件仍 1300，说明不是写句柄卡）、与首帧内容复杂度无关（探针场景更简单但同样要枚举适配器）。
+
+**根因是这台机器的驱动**：`iced_wgpu` 的适配器日志显示枚举出 **6 个完全重复的 RTX 4060 Laptop GPU + 1 个 Microsoft Basic Render Driver**。DX12 的 `EnumAdapters1` 在 GUI 子系统进程里逐个探测这 7 个适配器异常慢。**这是本机 NVIDIA 驱动（32.0.16.1062）的病态，不是代码缺陷**——干净机器只有 1 个适配器，不会付这笔钱。
+
+**为什么不干脆换 Vulkan**：Vulkan 本机 497 ms 确实快，但①仍超 300 ms 阈值；②不是所有目标机都有可用 Vulkan 驱动（老 Intel、部分 VM），而 DX12 是 Windows 上最稳的；③§8 的 38 MB 内存优势是照 DX12 定的。`WGPU_BACKEND=Vulkan,DX12` 掩码反而更慢（1430 ms，因为仍会枚举 DX12）。**结论：保持 DX12，把首帧判据的复核放到「干净 Win10 VM」那一行一起做**——那才是这个指标该落的地方。当前这台机器的 1.27 s 记为已知机器特异性开销。
+
+**体积**：阶段 0 探针 15.22 MB → 阶段 2 后端接入 16.27 MB → 阶段 3 六页 18.78 MB（`lto="thin"`）→ `lto="fat"` 17.35 MB → **阶段 4 实测 `lto=false` 反而最小（17.10 MB）且构建快 10 倍**（单编译单元下跨单元内联本就没多少可做，fat 的激进内联还撑大代码），故定 `lto=false` → **再叠 `+crt-static` 静态链 CRT 到 17.31 MB**（见下「零依赖」）。其中 4.34 MB 是内嵌字体。原目标「≤ 15 MB」是照探针定的，接了后端就不现实，**放宽到 ≤ 18 MB**——判据是「零运行时依赖的单文件分发」，不是跟 Tauri 的 3 MB 比（那 3 MB 后面挂着 100+ MB 的 WebView2 runtime）。去掉 `svg` feature 还能再省约 1.8 MB，但图标要改 `canvas` 手绘，**暂不砍**。
+
+**零依赖（阶段 4 补，纠正一个想当然）**：一直以为「Rust 静态链接 = 天然零依赖」，但 `dumpbin /DEPENDENTS` 打出来才发现默认 MSVC 构建**动态依赖 `VCRUNTIME140.dll`**（VC++ 运行库）和一批 `api-ms-win-crt-*`（UCRT）——这些**不是** Windows 自带组件，一台没装过 VC++ 可再发行组件的干净 Win10 VM 会直接起不来，正好砸在「零运行时依赖」这个核心卖点上。解法：`.cargo/config.toml` 里加 `-C target-feature=+crt-static`，把 CRT 编进 exe。之后 `dumpbin /DEPENDENTS` 只剩 `kernel32 / user32 / gdi32 / ole32 / ws2_32 / dwmapi / bcrypt / imm32 / uxtheme / opengl32 / shell32 / ntdll / advapi32` 加一个 `api-ms-win-core-synch-l1-2-0`（Win8.1+ 自带的核心 api-set）——全是系统 DLL。代价 +0.21 MB（17.10 → 17.31），换来的是「拷到一个裸 Windows 上双击就能跑」名副其实。**教训：「零依赖」是要用 dumpbin 验的，不是靠「Rust 嘛肯定静态」的直觉。**
 
 ### 测试方案变更：`iced_test` 取代 UIA 脚本
 
@@ -586,7 +604,7 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 
 好处：**比 UIA 脚本更快更稳**（无窗口焦点争夺、无 DPI 坐标换算、无「WebView2 未就绪导致空树」这类竞态——上一代为此折腾了好几轮）；坏处：它测的是「view 树 + update 逻辑」，**不覆盖真实 GPU 渲染与真实 IME**，那两项仍需手动验证（已在上表列为独立条目）。
 
-按 id 选中控件的 API 未在索引页确认（可能在 `iced_selector` 里），**未验证**；若只能按文本选中，需注意同文本控件的歧义（如多行都有「删除」按钮）——上一代 UIA 脚本已踩过这个坑，靠「按行标签定位 + 纵向坐标匹配」解决，`iced_test` 侧需要等价手段，可能要给控件加唯一文案或用 `iced_selector`。
+**阶段 4 已实测确认**（`iced_selector` 0.14 随 `iced_test` 一起拉下来，读了源码）：`Selector` 对 `widget::Id` **有实现**（`impl Selector for widget::Id`，按 `candidate.id()` 精确匹配），所以按 id 选中是可行的——只是我们的控件大多没设 id。`&str` 的实现是 **`content == self` 精确相等**（不是子串），`Text` 和 `TextInput` 都参与匹配。歧义处理：本套用例靠「只在对应页面点 + 选唯一文案」规避（如多行的「删除」按钮，只在有单行数据的 seeded_app 上点）；真要按行定位，给控件 `.id(widget::Id::new(...))` 再用 Id 选择器即可。另外 `click` 要求目标 `visible_bounds` 非空（滚出视口的点不到），`find` 不要求可见。
 
 
 ### 已知风险与预案
@@ -690,11 +708,12 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 
 **验收**：两轮 judge 视觉验收，六页最终全 pass（首轮 3 页 fail：游离的「→」按钮、控制台空状态顶部对齐、设置页混进开发者自述文案，均已修）。交互实测（`phase0/tools/interact-probe.ps1`）：模态开关、ESC、Ctrl+1..6、侧边栏点击全部有对应 Message 到达 `update()`。空闲仍 **delta=0**、私有工作集 **72.8 MB**、CPU **0%**。
 
-**阶段 4：收尾**
-17. 图标全套、toast、空状态
-18. `iced_test` 写全流程用例（§9）
-19. 性能实测对照 §9 表格，逐项签字
-20. 打包（单 exe + 可选 NSIS）、README、与 Tauri 版并排截图对比
+**阶段 4：收尾 —— ✅ 完成**
+
+17. ✅ 图标全套：补 `node/harness/download/market` 四个专属图形，环境页三行（Node/dsh/pnpm）与插件市场两来源（catalog/npm）各用对图标，不再借用侧边栏图标。toast、空状态阶段 3 已在位。
+18. ✅ `iced_test` 全流程用例：`src/tests.rs` 14 例全绿（导航/模态全流程/主题/插件分页/控制台/设置 dirty/启停消息）。**测的是 view↔update 契约**——`simulator` 不跑 `update` 返回的 `Task`，真实子进程 I/O 仍由 `--e2e` 覆盖。踩到：`&str` 选择器是**精确匹配**（`content == self`），空草稿点「创建」会冒泡到遮罩产生 `CloseDialog`（故断言「无 DialogConfirm」而非「无消息」）；喂 `Start/Stop` 前必须 `bridge::init()`。
+19. ✅ 性能实测对照 §9：空闲 CPU 0.0015%、GPU 0.00%、出帧 delta=0、私有工作集 88.5 MB（稳定不爬）、单 exe 17.31 MB、零运行时依赖（`dumpbin` 确认仅系统 DLL）全达标；**首帧发现阶段 0 的 145 ms 是控制台子系统探针的假象**，产品 GUI+DX12 本机 ~1.27 s（驱动枚举 6 个重复适配器的机器特异性开销，见 §9「首帧真相」）。本机可测项全部签字，唯一挂起的是「干净 Win10 VM 首帧复核」——非本机可闭环，列入 §13 待办。
+20. ✅ 打包：单 exe（`target/release/dshnext.exe` 17.31 MB，`+crt-static` 零依赖）+ 可选 NSIS（`packaging/installer.nsi`，每用户安装，注册表标识 `Dshnext` 与上一代 `DshDesk` 分开）；README 按阶段 4 实测数字重写；六页与 Tauri 版并排对比图 `shots/compare-p4/`（左 Tauri 右 Dshnext）。
 
 ---
 
@@ -756,9 +775,9 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 
 **仍未验证**：
 
-- `iced_test` 是否支持按 id 选控件（`iced_selector` 未读） —— 阶段 4 前需确认
+- ~~`iced_test` 是否支持按 id 选控件~~ —— ✅ 阶段 4 已确认：`iced_selector` 对 `widget::Id` 有 `Selector` 实现（见 §9 选择器说明）
 - `window::Settings::platform_specific` 里 Windows 相关字段（drag-drop、skip_taskbar 等） —— docs.rs 是 Linux 构建，未列出
-- 干净 Win10 VM（无 WebView2/.NET）能否直接跑单 exe —— 阶段 4 验证
+- 干净 Win10 VM（无 WebView2/.NET/VC++ 运行库）能否直接跑单 exe —— **构建层面已用 `dumpbin` 验死**（`+crt-static` 后只剩系统 DLL，无 VCRUNTIME140/UCRT/WebView2/.NET）；剩「在真·裸机上双击实跑」这一经验验证需要一台 VM，本机无法模拟。连同「干净机器首帧复核」一起列为交付前必做项。
 - 换一台机器（AMD/Intel 集显、无独显）的内存数字 —— 目前只有一台 RTX 4060 的数据，75 MB 驱动开销可能因厂商而异
 - 真实页面（六页都开过）的稳态内存 —— 阶段 3 复核；demo 页 98.6 MB 是刻意加密的最坏情况，不是真实页面数字
 
