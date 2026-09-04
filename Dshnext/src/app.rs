@@ -10,6 +10,7 @@
 use crate::theme::{self, HERO_NUM_SIZE, Palette, R_PILL};
 use crate::ui::anim::{self, AnimState, HOVER_DUR};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
+use crate::ui::titlebar;
 use crate::ui::{card, icon, mono, txt, txt_bold};
 use iced::widget::{Column, Row, column, container, mouse_area, row, scrollable, space, stack};
 use iced::{
@@ -46,6 +47,8 @@ pub struct Dshnext {
     /// `--autotest`：程序自己触发一次 hover 进/出，用出帧日志证明
     /// 「动画结束 → frames() 撤订 → 出帧归零」，不依赖真实鼠标。
     pub autotest: bool,
+    /// 最大化状态。无边框后系统不再管这个，标题栏按钮字形要跟着变。
+    pub maximized: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +64,15 @@ pub enum Message {
     Pressed(&'static str),
     /// autotest 的第二拍：延迟后触发 hover 退出。
     AutoExit,
+    /// 自绘标题栏：拖动窗口（交给系统，不自己算 delta）。
+    DragWindow,
+    Minimize,
+    ToggleMaximize,
+    /// 最大化状态回读，用来切标题栏按钮字形。
+    MaximizedChanged(bool),
+    Close,
+    /// 边缘热区：开始缩放。
+    Resize(window::Direction),
 }
 
 impl Dshnext {
@@ -72,6 +84,7 @@ impl Dshnext {
             shot,
             last_action: "（还没有）",
             autotest,
+            maximized: false,
         }
     }
 
@@ -156,9 +169,39 @@ impl Dshnext {
                 Task::none()
             }
             Message::Pressed(label) => {
+                log::info!("pressed {label}");
                 self.last_action = label;
                 Task::none()
             }
+            Message::DragWindow => match self.window {
+                // window::drag 把后续拖动交给系统（WM_NCLBUTTONDOWN + HTCAPTION），
+                // 比自己算 delta 再 move_to 跟手得多，也不吃帧。
+                Some(id) => window::drag(id),
+                None => Task::none(),
+            },
+            Message::Minimize => match self.window {
+                Some(id) => window::minimize(id, true),
+                None => Task::none(),
+            },
+            Message::ToggleMaximize => match self.window {
+                // toggle 完再回读一次真实状态：万一系统拒绝（如已全屏），
+                // 本地布尔翻转就和现实脱节，按钮字形会错。
+                Some(id) => window::toggle_maximize::<Message>(id)
+                    .chain(window::is_maximized(id).map(Message::MaximizedChanged)),
+                None => Task::none(),
+            },
+            Message::MaximizedChanged(v) => {
+                self.maximized = v;
+                Task::none()
+            }
+            Message::Close => match self.window {
+                Some(id) => window::close(id),
+                None => iced::exit(),
+            },
+            Message::Resize(dir) => match self.window {
+                Some(id) => window::drag_resize(id, dir),
+                None => Task::none(),
+            },
         }
     }
 
@@ -198,26 +241,65 @@ impl Dshnext {
             self.card_anim(pal),
         ]
         .spacing(18)
-        .padding(Padding::from(44).top(34));
+        .padding(Padding::from(44).top(28));
 
         // 环境光层固定在顶部（不随内容滚动），卡片在其上滚过——
         // 对应 orevx 把渐变挂在 html 背景、内容滚过它的效果。
-        let main_area = stack![self.ambient(pal), scrollable(main).width(Fill).height(Fill)]
-            .width(Fill)
-            .height(Fill);
+        let main_area = scrollable(main).width(Fill).height(Fill);
 
-        row![self.sidebar(pal), main_area]
+        // 无边框窗口：标题栏在最上，内容在下，整体套一层圆角边框容器，
+        // 最后叠一层边缘缩放热区。渐变要盖到标题栏，所以 ambient 在最外层 stack。
+        let body = stack![
+            self.ambient(pal),
+            column![
+                titlebar::titlebar(
+                    "DshDesk — DeepSeek Harness 启动器",
+                    pal,
+                    &self.anim,
+                    titlebar::Actions {
+                        drag: Message::DragWindow,
+                        minimize: Message::Minimize,
+                        toggle_maximize: Message::ToggleMaximize,
+                        close: Message::Close,
+                    },
+                    self.maximized,
+                    Message::HoverEnter,
+                    Message::HoverExit,
+                ),
+                row![self.sidebar(pal), main_area].width(Fill).height(Fill),
+            ]
+            .width(Fill)
+            .height(Fill),
+        ]
+        .width(Fill)
+        .height(Fill);
+
+        // 窗口圆角交给 DWM（main.rs 的 corner_preference: Round）——自己画圆角
+        // 会和方形的窗口表面对不齐、角上露直角。这层只负责底色与外描边。
+        let shell = container(body)
+            .width(Fill)
+            .height(Fill)
+            .style(move |_theme: &Theme| container::Style {
+                text_color: Some(pal.text),
+                background: Some(pal.bg_app.into()),
+                border: Border::default(),
+                shadow: Shadow::default(),
+                snap: true,
+            });
+
+        stack![shell, titlebar::resize_grips(Message::Resize)]
             .width(Fill)
             .height(Fill)
             .into()
     }
 
-    /// 顶部环境光渐变带：蓝 → 青 → 透明，高 260px。亮色两档都 transparent，等于无。
+    /// 顶部环境光渐变带：蓝 → 青 → 透明，高 300px（含标题栏）。
+    /// 亮色两档都 transparent，整条带子不可见，零成本。
     fn ambient(&self, pal: &'static Palette) -> Element<'_, Message> {
         column![
             container(space::Space::new())
                 .width(Fill)
-                .height(260.0)
+                .height(300.0)
                 .style(ambient_style(pal)),
             space::vertical(),
         ]
@@ -657,7 +739,8 @@ fn dot_style(pal: &'static Palette) -> impl Fn(&Theme) -> iced::widget::containe
 fn side_style(pal: &'static Palette) -> impl Fn(&Theme) -> iced::widget::container::Style + Copy + 'static {
     move |_theme: &Theme| iced::widget::container::Style {
         text_color: Some(pal.text),
-        background: Some(pal.bg_side.into()),
+        // 背景透明：环境光渐变在下层铺满整窗，侧边栏若填色会切出一道硬边。
+        background: None,
         border: Border::default(),
         shadow: Shadow::default(),
         snap: true,

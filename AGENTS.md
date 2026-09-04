@@ -5,10 +5,10 @@
 ## 项目现状
 
 - `src/` + `src-tauri/`：**第一代，Tauri 2 + React，功能完整可用**，已出 NSIS 安装包（3,071,492 字节）。全流程与插件流程各跑通过一次。**不因 Dshnext 重构而停止维护。**
-- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0 可行性验证已完成，五项通过**，见 `Dshnext/phase0/REPORT.md`。下一步是阶段 1「视觉地基」。
-- `Dshnext/phase0/`：探针工程，**保留不删**——它是唯一能快速复现性能数字的地方，阶段 1 之后每次改动都该重跑 `tools/measure-idle.ps1`。
+- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0（可行性验证，五项通过）与阶段 1（视觉地基）已完成**，另做了阶段 1.5 暗色精修 + 无边框窗口。见 `Dshnext/phase0/REPORT.md` 与 `Dshnext/DESIGN.md`。下一步是阶段 2「后端接入」。
+- `Dshnext/phase0/`：探针工程，**保留不删**——它是唯一能快速复现性能数字的地方，每次改动都该重跑 `tools/measure-idle.ps1`。
 
-进阶段 1 之前要先把探针里验过的三样搬进产品代码：`theme.rs` 令牌、字体加载、`WGPU_BACKEND=dx12` 限定（白省 38 MB）。
+阶段 0 验过的三样已搬进产品代码：`theme.rs` 令牌、字体加载、`WGPU_BACKEND=dx12` 限定（白省 38 MB）。
 
 ## 环境
 
@@ -39,6 +39,8 @@
 5. **UIA 或截图之前先恢复并重定位窗口。** 最小化的窗口 rect 是 -25600,-25600，UIA 树是空的，截出来是 200×34 的残片。
 6. 截图用 `PrintWindow(hwnd, hdc, 2)`（PW_RENDERFULLCONTENT）抓窗口自己的表面，别的程序抢焦点也污染不了。
 7. **iced 窗口在 UIA 树里后代数为 0**（无 AccessKit）。第一代的 `scripts/e2e.ps1` 对 Dshnext 完全失效，阶段 4 要换 `iced_test`。
+8. **点击测试前必须确认目标点上没有别的窗口。** `WindowFromPoint` 返回的不是被测窗口就白点了——ZCode 的应用内浏览器窗格（`Chrome_RenderWidgetHostHWND`，属 msedge 进程）会盖在屏幕右侧，害我一度以为 iced 的 `on_press` 坏了。可靠做法：先 `SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE)` 把窗口顶到最上并挪到已知位置，每次点击前用 `WindowFromPoint` 断言命中。脚本见 `Dshnext/phase0/tools/click-probe.ps1`。
+9. **窗口几何变了要重算坐标。** 最大化后客户区原点和宽度全变，拿旧坐标点「还原」按钮会点空，看起来像按钮失灵。每次点击前重新 `ClientToScreen` + `GetClientRect`，再按缩放比（125%）换算逻辑像素。
 
 ## 性能测量
 
@@ -57,6 +59,10 @@
 6. **OpenType feature 用不了。** iced 从不设置 cosmic-text 的 `font_features`，`tnum` 不可达。等宽数字只能靠字体天然等宽——**换字体前先验十个数字的 advance 是否一致**。
 7. **子集字体必须写 name ID 16/17**（typographic family/subfamily）。`fontdb` 优先用 ID 16 做家族键；只改 ID 1 会让 SemiBold 注册成独立家族，`Font::with_name(...) + Weight::Semibold` **静默落到系统字体**，截图上看不出来。`varLib.instancer` 还要带 `--update-name-table`。
 8. 后端切换：`ICED_BACKEND=tiny-skia` 选软件渲染器；`WGPU_BACKEND=dx12` 限定 GPU 后端。wgpu 是在 compositor 创建时才读后者，**晚于 `main`**，所以进程内 `set_var` 有效。
+9. **`Text<'a>` 对 `'a` 不变（invariant）。** 文本封装函数签名写 `impl IntoFragment<'static> -> Text<'static>` 会让 `format!` 出来的串塞不进短生命周期的 `Column`（报 "borrowed data escapes"）。统一写 `<'a>`。
+10. **`mouse_area` 要求 `Message: Clone + 'static`。** 一路传染到所有包了它的组件函数签名。
+11. **`stack!` 里的覆盖层会吃掉下层点击。** `Stack::update` 逆序派发、先到的先 capture。透明热区放最上层是对的，但**热区之间的空隙必须是裸 `Space`，不能包 `mouse_area`**，否则整个内容区点不动。
+12. **无边框窗口（`decorations: false`）连缩放边框一起没了**，八向 `drag_resize` 热区、拖动 `window::drag`、最小化/最大化/关闭全要自己接。细节见 DESIGN.md §7.6。
 
 ## 第一代（Tauri）专有
 

@@ -8,6 +8,7 @@ pub mod anim;
 pub mod button;
 pub mod card;
 pub mod icon;
+pub mod titlebar;
 
 use iced::widget::text::{self, IntoFragment, Text};
 use iced::{Font, font};

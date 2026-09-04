@@ -441,6 +441,25 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 
 上一代是内联 SVG（10 个图标：launch/versions/plugins/env/console/settings/node/harness/download/market/play/sleep/log）。iced 有 `svg` widget，把 SVG 存成 `assets/icons/*.svg` 用 `include_bytes!` 编进 exe。**动态着色已验证（阶段 1）**：`svg::Style{color: Some(c)}` 走的是渲染后像素级 RGB 替换（保留 alpha，见 `iced_wgpu/src/image/vector.rs`），对单色描边图标等价于 `currentColor`；多色图标不适用，但本套图标全是单色描边。阶段 4 补齐剩余图标即可，无需 canvas 兜底。
 
+### 7.6 无边框窗口与自绘标题栏（`ui/titlebar.rs`，阶段 1.5 已落地）
+
+用户要求去掉系统那条带缩放/最大化/关闭的原生外框。`window::Settings { decorations: false }` 一关，**系统标题栏和四周的缩放边框会一起消失**，两样都得自己补：
+
+| 能力 | 做法 | 注意 |
+|---|---|---|
+| 拖动窗口 | 标题栏包 `mouse_area(...).on_press(DragWindow)` → `window::drag(id)` | **交给系统**（内部走 `WM_NCLBUTTONDOWN`+`HTCAPTION`），不要自己算 delta 再 `move_to`——那样跟手差且每帧都出帧 |
+| 最小化 | `window::minimize(id, true)` | |
+| 最大化/还原 | `window::toggle_maximize(id)` 再 `.chain(window::is_maximized(id))` 回读 | **必须回读**：本地布尔翻转会和现实脱节（系统可能拒绝），按钮字形就错了 |
+| 关闭 | `window::close(id)` | `exit_on_close_request` 默认 true，关掉最后一个窗口即退出进程 |
+| 八向缩放 | 窗口边缘铺 6px 透明热区，`on_press` → `window::drag_resize(id, Direction::*)` | 热区必须是 `stack!` 的**最后一个孩子**（`Stack::update` 逆序派发、先到的先捕获）；**中间那块必须是裸 `Space`，不能包 `mouse_area`**，否则整个内容区的点击全被它吃掉 |
+| 缩放光标 | `mouse_area(...).interaction(Interaction::Resizing*)` | 只在 `content_interaction == None` 时生效，正好适合透明热区 |
+
+两个 Windows 平台参数不能省（`window::settings::PlatformSpecific`）：
+- `undecorated_shadow: true` —— 不开的话无边框窗口和桌面糊成一片，边界完全看不出来。代价是顶部多一条 1px 线（iced 文档明说）。
+- `corner_preference: Round` —— 圆角**交给 DWM**（Win11 22000+）。试过自己在最外层容器上画 `border.radius`，结果和方形的窗口表面对不齐、四角露出直角色块；让系统裁、内容只管填满才干净。
+
+标题栏三个按钮的字形直接用文本 `─ □ ❐ ✕`（U+2500 / U+25A1 / U+2750 / U+2715），都在子集字体覆盖范围内，省三个 svg 文件和一次解析。关闭按钮 hover 变红（Windows 惯例），其余变浅色叠加，复用 §7.1 的补间。
+
 ### 汇总工作量
 
 | 项 | 难度 | 说明 |

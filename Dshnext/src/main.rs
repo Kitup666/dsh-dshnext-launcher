@@ -75,7 +75,22 @@ fn main() -> iced::Result {
         Dshnext::view,
     )
     .title("DshDesk — DeepSeek Harness 启动器")
-    .window_size((1280.0, 860.0))
+    .window(iced::window::Settings {
+        size: iced::Size::new(1280.0, 860.0),
+        // 去掉系统标题栏与缩放边框，改自绘（src/ui/titlebar.rs）。
+        decorations: false,
+        platform_specific: iced::window::settings::PlatformSpecific {
+            // 阴影必须留着：无边框 + 无阴影时窗口和桌面糊成一片，边界看不出来。
+            // 代价是顶部会多出 1px 线（iced 文档明说），可以接受。
+            undecorated_shadow: true,
+            // 圆角交给 DWM 做（Win11 22000+）。自己在容器上画圆角边框会和方形的
+            // 窗口表面对不齐，角上露出直角——让系统裁，内容只管填满。
+            corner_preference: iced::window::settings::platform::CornerPreference::Round,
+            ..Default::default()
+        },
+        min_size: Some(iced::Size::new(880.0, 560.0)),
+        ..Default::default()
+    })
     .theme(theme_of)
     .style(app_background)
     .subscription(Dshnext::subscription)
