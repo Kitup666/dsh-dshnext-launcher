@@ -47,7 +47,7 @@ Section "Install"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
-  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 17500
+  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 17734   ; KB, = release exe size
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 SectionEnd
 
@@ -55,6 +55,10 @@ Section "Uninstall"
   Delete "$INSTDIR\${APP_EXE}"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir  "$INSTDIR"
+  ; The two shortcuts must be deleted by name: plain RMDir refuses a non-empty
+  ; folder, so without these the Start-menu entry survives every uninstall.
+  Delete "$SMPROGRAMS\${APP_ID}\${APP_NAME}.lnk"
+  Delete "$SMPROGRAMS\${APP_ID}\Uninstall.lnk"
   RMDir  "$SMPROGRAMS\${APP_ID}"
   DeleteRegKey HKCU "${UNINST_KEY}"
 SectionEnd

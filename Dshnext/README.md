@@ -45,9 +45,10 @@ cargo run --release -- --page home --switch-to settings --switch-at 4000 --shot 
 
 ## 打包
 
-- **单 exe（推荐，绿色版）**：`cargo build --release` → `target/release/dshnext.exe`（17.31 MB，零运行时依赖，拷走即用）。
+- **单 exe（推荐，绿色版）**：`cargo build --release` → `target/release/dshnext.exe`（17.32 MB，零运行时依赖，拷走即用）。
   `.cargo/config.toml` 里已固化 `-C target-feature=+crt-static`：默认 MSVC 构建会动态依赖 `VCRUNTIME140.dll`（VC++ 运行库，干净机器上没有），静态链 CRT 后 `dumpbin /DEPENDENTS` 只剩 kernel32/user32/gdi32 这类系统 DLL——这才是真正的「零运行时依赖」。
-- **NSIS 安装包（可选）**：`packaging/installer.nsi`，用 `makensis` 编译 → 每用户安装（`$LOCALAPPDATA\Programs\Dshnext`，免管理员），带开始菜单项与卸载器。注册表标识用 `Dshnext` 与上一代的 `DshDesk` 分开，避免互相覆盖卸载项。
+- **NSIS 安装包（可选）**：`packaging/installer.nsi`，用 `makensis` 编译 → `packaging/Dshnext_0.1.0_x64-setup.exe`（6.50 MB，lzma 压到 37%）。每用户安装（`$LOCALAPPDATA\Programs\Dshnext`，免管理员），带开始菜单项与卸载器。注册表标识用 `Dshnext` 与上一代的 `DshDesk` 分开，避免互相覆盖卸载项。安装包不入库（`.gitignore` 里 `packaging/*.exe`），需要时现编。
+  装卸一圈实测过：`setup /S /D=<目录>` 后包内 exe 与 `target/release` 的 SHA-256 相同，卸载后安装目录、开始菜单项、注册表卸载项全部消失。
 
 ## 出图与对照
 

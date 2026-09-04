@@ -97,6 +97,14 @@
 6. **交互实测用 `phase0/tools/interact-probe.ps1`**：模态、ESC、Ctrl+1..6、侧边栏点击一套跑完。坐标是**逻辑像素**，脚本按 1.25 缩放换算；窗口 1600×1120 物理 = 1280×896 逻辑，x 超过 1280 就点到客户区外面去了（第一版就是这么白点的）。
 7. **「在途请求」不能只看结果是否为空判重。** 反复进环境页会重复拉版本列表——`dsh_versions.is_empty()` 在请求飞在半路时仍为真。要单独一个 `versions_loading` 标志。
 
+## NSIS 安装包（Dshnext/packaging）
+
+1. **`makensis` 报 `Can't open output file` 通常是上一次装测的 setup 进程还活着。** NSIS 静默安装（`/S`）在文件拷完后自身可能仍驻留，占着输出文件名。`tasklist //FI "IMAGENAME eq Dshnext_0.1.0_x64-setup.exe"` 一查就见，`taskkill //F //PID` 掉再编。
+2. **`/D=` 参数必须走 `cmd //c`。** Git Bash 会把 `/D=C:\...` 当路径改写（`/S "/D=..."` 也一样），NSIS 收到畸形参数直接退 2 且什么都不装。写 `cmd //c "setup.exe /S /D=C:\目标"`。`/D=` 还必须是**最后一个**参数且不能加引号（NSIS 的规矩）。
+3. **卸载段只写 `RMDir "$SMPROGRAMS\..."` 删不掉开始菜单文件夹**——`RMDir` 不删非空目录，两个 `.lnk` 还在里面，于是每次卸载都留一个死文件夹。必须先逐个 `Delete` 快捷方式再 `RMDir`。这条只有真装真卸一遍才看得见。
+4. **验证包内 exe 是不是当前构建，用哈希不用大小。** `7z e setup.exe dshnext.exe` 抽出来跟 `target/release/dshnext.exe` 比 SHA-256；只看字节数会被「改了代码但体积没变」骗过去。
+5. `.ps1` 那条 BOM 纪律不适用于 `.nsi`——**`installer.nsi` 保持纯 ASCII**（文件头注释里也写着），makensis 按 ACP 读脚本，中文进去就是乱码。
+
 ## 第一代（Tauri）专有
 
 - Vite 必须 `watch: { ignored: ["**/src-tauri/**"] }`，否则监视 `dshdesk_lib.dll` 报 EBUSY

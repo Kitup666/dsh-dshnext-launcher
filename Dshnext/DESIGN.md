@@ -755,6 +755,7 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 21. ✅ 切页入场动画（§7.7）：`ui/reveal.rs` 一个透明包装 widget，平移 + 背景色面纱，两者共用 `anim::PAGE`；侧边栏选中态同帧交叉淡入（`anim::NAV` + `app.prev_page`）。**空闲零帧不变**（`--drawlog`：切页那 5s 出 31 帧，之后 `delta=0`），`cargo test` 仍 14/14。三个新坑记进 AGENTS.md（面纱必须自己 `with_layer`、位移用 `with_translation` 不动布局、`animate_to` 起不了重播所以加了 `restart`）。
 22. ✅ 排版与层级收口（§6「排版与层级收口」）：字号十档收成八档令牌、纵向节奏分 `GAP_CARD`/`GAP_SECTION` 两档（靠 `widgets::page_stack` 嵌层实现）、卡片高度分 `card()`/`card_hero()` 两档（圆角 16/20 + 两级阴影）、按钮新增 `Accent` 变体把 `Primary` 收成每屏至多一个。
 23. ✅ 视觉验收：12 张图（六页 × 明暗）交 judge，暗色 5 pass + 1 fail、亮色 6 pass；那条 fail 是设置页复选框说明行的缩进——量下来确实比内容列多 24 逻辑像素，改法是删掉「对齐复选框标签」的缩进回到内容列（它是整张卡里唯一不在内容列上的一行）。修完重出，两处左边缘同为 x=375。对比图 `shots/compare-p5/`，动画取证 `shots/anim/`。
+24. ✅ 安装包跟上：`makensis installer.nsi` 重编，包内 exe 与 `target/release/dshnext.exe` 的 SHA-256 相同（18,160,128 字节 → 安装包 6,814,064 字节，lzma 37.3%）。装卸一圈实测：`/S /D=<目录>` 静默安装后文件哈希一致、注册表卸载项齐全、装出来的 exe 能自截图；卸载后安装目录与注册表都清干净了，但**开始菜单文件夹会留下**——`RMDir` 不删非空目录，卸载段只写了 `RMDir` 没删那两个 `.lnk`。已补 `Delete` 两条快捷方式，重编后再验证一遍才全清。`EstimatedSize` 同步到 17734 KB。
 
 ---
 
