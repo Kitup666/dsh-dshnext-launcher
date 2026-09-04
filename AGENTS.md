@@ -5,7 +5,7 @@
 ## 项目现状
 
 - `src/` + `src-tauri/`：**第一代，Tauri 2 + React，功能完整可用**，已出 NSIS 安装包（3,071,492 字节）。全流程与插件流程各跑通过一次。**不因 Dshnext 重构而停止维护。**
-- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0（可行性）、阶段 1（视觉地基 + 暗色精修 + 无边框窗口）、阶段 2（后端接入）已完成**。见 `Dshnext/phase0/REPORT.md` 与 `Dshnext/DESIGN.md`。下一步是阶段 3「页面移植」。
+- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0～3 已完成**（可行性 / 视觉地基 / 后端接入 / 六页移植）。见 `Dshnext/phase0/REPORT.md` 与 `Dshnext/DESIGN.md`。下一步是阶段 4「收尾」。
 - `Dshnext/phase0/`：探针工程，**保留不删**——它是唯一能快速复现性能数字的地方，每次改动都该重跑 `tools/measure-idle.ps1`。
 
 阶段 0 验过的三样已搬进产品代码：`theme.rs` 令牌、字体加载、`WGPU_BACKEND=dx12` 限定（白省 38 MB）。
@@ -42,6 +42,12 @@
 8. **点击测试前必须确认目标点上没有别的窗口。** `WindowFromPoint` 返回的不是被测窗口就白点了——ZCode 的应用内浏览器窗格（`Chrome_RenderWidgetHostHWND`，属 msedge 进程）会盖在屏幕右侧，害我一度以为 iced 的 `on_press` 坏了。可靠做法：先 `SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE)` 把窗口顶到最上并挪到已知位置，每次点击前用 `WindowFromPoint` 断言命中。脚本见 `Dshnext/phase0/tools/click-probe.ps1`。
 9. **窗口几何变了要重算坐标。** 最大化后客户区原点和宽度全变，拿旧坐标点「还原」按钮会点空，看起来像按钮失灵。每次点击前重新 `ClientToScreen` + `GetClientRect`，再按缩放比（125%）换算逻辑像素。
 
+## Dshnext 出图与验收
+
+- `--page <名>` 直接开在某一页（home/profiles/plugins/env/console/settings），`--tall` 把窗口开到 1280×1400 好把设置页一屏截完
+- `--shot 路径 --after 毫秒` 自截图退出。**`--after` 要给够**：六页都会在开窗时发环境探测（三次 `xx --version`，每次可能几秒），2 秒会截到还没填好的界面，给 4000 稳当
+- 出图后交 judge 子代理做视觉验收，不要自己看图。两轮下来六页从 3 fail 到全 pass
+
 ## 性能测量
 
 1. **进程树必须递归遍历。** WebView2 是 `dshdesk.exe` → `msedgewebview2.exe`(browser) → GPU/renderer/utility 共 7 个进程。只走一层父子关系只找到 2 个，**内存少算 230 MB、CPU 少算 100 倍**——照那个数字比，反倒是 WebView2「更省」。
@@ -65,6 +71,11 @@
 12. **无边框窗口（`decorations: false`）连缩放边框一起没了**，八向 `drag_resize` 热区、拖动 `window::drag`、最小化/最大化/关闭全要自己接。细节见 DESIGN.md §7.6。
 13. **`Subscription::run` 的 builder 是裸函数指针 `fn()`，捕获不了任何状态。** channel 不能建好再传进去，只能放全局（`OnceLock` + `Mutex<Option<_>>` 等订阅第一次 `take()`）。同理 `Task::perform` 的 future 要 `'static`，跨 Task 共享的东西（如 `ProcMap`）也得放全局。做法见 `Dshnext/src/bridge.rs`。
 14. **事件流订阅要返回原始类型让调用方自己 `.map()`**（`bridge::events() -> Subscription<CoreEvent>`），否则为了把 `fn(CoreEvent) -> Message` 塞进裸函数指针得 transmute。
+15. **关掉 `web-colors` 后 iced 按物理（线性空间）混色，深底上叠带色相的半透明会被放大得离谱。** 5% 的 `#5b76ff` 叠在 `#18181a` 上实测出 `(31,36,69)`——蓝通道从 26 冲到 69，选中行直接盖过行内按钮。**纪律：半透明叠色只用于中性灰（hover），带色相的一律写死不透明值。**
+16. **`checkbox()` 在 0.14 只收 `is_checked`**，标签走 `.label()`（0.13 是 `checkbox(label, value)`）。
+17. **`opaque()` 必须包在模态遮罩上**，否则点遮罩会穿透到下层按钮。**ESC 关模态只能走全局键盘订阅**——覆盖层拿不到键盘焦点。
+18. **`pick_list` 的 `L: Borrow<[T]>` 接受 `Vec<T>`**，不用为了凑 `&'a [T]` 去 leak。
+19. **`Text<'a>` 的 `IntoFragment` 参数别钉 `'static`**（同第 9 条），页面里到处是 `format!` 出来的串。
 
 ## Dshnext 后端复用
 
@@ -72,6 +83,9 @@
 2. **`EventSink` 用 unbounded channel 是刻意的。** 日志洪峰时反压会把 dsh 卡在写管道上；上限交给 UI 侧的环形缓冲（`VecDeque` 上限 2000）。
 3. **`core/mod.rs` 顶部有 `#![allow(dead_code)]`。** 阶段 2 只接了四条链路，安装/插件/市场的函数还没调用方，但它们是上一代验证过的逻辑，**别删**。
 4. **验证后端链路用 `--e2e`，不要用鼠标坐标。** 程序自己跑「启动第一个 profile → 8s → 停止」，`RUST_LOG=dshnext=debug` 能看到每个 `CoreEvent` 到达 `update()`。
+5. **`RUST_LOG=dshnext=debug` 会打出每条 Message**（`update.rs` 开头，已排除高频的 Tick/ToastTick）。交互测不出效果时先看这个——分得清「消息没到」和「到了但逻辑不对」。
+6. **交互实测用 `phase0/tools/interact-probe.ps1`**：模态、ESC、Ctrl+1..6、侧边栏点击一套跑完。坐标是**逻辑像素**，脚本按 1.25 缩放换算；窗口 1600×1120 物理 = 1280×896 逻辑，x 超过 1280 就点到客户区外面去了（第一版就是这么白点的）。
+7. **「在途请求」不能只看结果是否为空判重。** 反复进环境页会重复拉版本列表——`dsh_versions.is_empty()` 在请求飞在半路时仍为真。要单独一个 `versions_loading` 标志。
 
 ## 第一代（Tauri）专有
 

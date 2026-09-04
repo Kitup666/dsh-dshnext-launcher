@@ -69,6 +69,11 @@ pub struct Palette {
     pub accent: Color,
     pub accent_hi: Color,
     pub accent_soft: Color,
+    /// 列表选中行的底色。**必须是不透明色**：iced 关掉 `web-colors` 后按物理
+    /// （线性空间）混色，深底上叠一点饱和蓝会被放大得离谱——实测 5% accent
+    /// 叠在 #18181a 上得到 (31,36,69)，蓝通道从 26 冲到 69，整行盖过行内按钮。
+    /// 半透明叠色只适合中性灰（hover），带色相的一律写死。
+    pub row_selected: Color,
     pub accent_line: Color,
     pub on_accent: Color,
 
@@ -127,6 +132,7 @@ impl Palette {
         accent: rgb!(0x5b76ff),
         accent_hi: rgb!(0x7d92ff),
         accent_soft: rgba!(0x5b76ff, 0.14),
+        row_selected: rgb!(0x20222e),
         accent_line: rgba!(0x5b76ff, 0.40),
         on_accent: Color::WHITE,
 
@@ -191,6 +197,7 @@ impl Palette {
         accent: rgb!(0x5160ea),
         accent_hi: rgb!(0x6a77f2),
         accent_soft: rgba!(0x5160ea, 0.10),
+        row_selected: rgb!(0xeef0fb),
         accent_line: rgba!(0x5160ea, 0.35),
         on_accent: Color::WHITE,
 

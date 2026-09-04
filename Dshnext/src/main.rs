@@ -1,19 +1,26 @@
 //! Dshnext 入口。
 //!
-//! 用法：`dshnext [--shot 路径] [--after 毫秒] [--theme dark|light] [--all-backends]`
+//! 用法：
+//! ```text
+//! dshnext [--theme dark|light] [--shot 路径 [--after 毫秒]]
+//!         [--page home|profiles|plugins|env|console|settings]
+//!         [--drawlog] [--autotest] [--e2e] [--all-backends]
+//! ```
 //!
-//! 阶段 1 只到「视觉地基」：没有后端、没有页面路由，整个程序就是 app.rs 的 demo 页。
-//! 后端接入在阶段 2（core/ 解耦 + EventSink），页面移植在阶段 3。
+//! 阶段 3 已完成：六个页面全部移植，后端真实接通。
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
 mod bridge;
 mod core;
+mod pages;
 mod theme;
 mod ui;
+mod update;
 
 use app::{Dshnext, Mode, Shot};
+use pages::Page;
 use std::time::Duration;
 
 fn main() -> iced::Result {
@@ -75,15 +82,34 @@ fn main() -> iced::Result {
     // 必须在 application 之前——view 第一次跑就可能要 sink()。
     bridge::init();
 
+    // --page：直接开在某一页，出图验收时省得点。
+    let start_page = match opt("--page").as_deref() {
+        Some("profiles") => Page::Profiles,
+        Some("plugins") => Page::Plugins,
+        Some("env") => Page::Env,
+        Some("console") => Page::Console,
+        Some("settings") => Page::Settings,
+        _ => Page::Home,
+    };
+
     let e2e = flag("--e2e");
     let mut application = iced::application(
-        move || Dshnext::new(mode, shot.clone(), autotest, e2e),
+        move || {
+            let mut app = Dshnext::new(mode, shot.clone(), autotest, e2e);
+            app.page = start_page;
+            app
+        },
         Dshnext::update,
-        Dshnext::view,
+        pages::view,
     )
     .title("DshDesk — DeepSeek Harness 启动器")
     .window(iced::window::Settings {
-        size: iced::Size::new(1280.0, 860.0),
+        // --tall：出图验收用，把长页面（设置页）一屏截完
+        size: if flag("--tall") {
+            iced::Size::new(1280.0, 1400.0)
+        } else {
+            iced::Size::new(1280.0, 860.0)
+        },
         // 去掉系统标题栏与缩放边框，改自绘（src/ui/titlebar.rs）。
         decorations: false,
         platform_specific: iced::window::settings::PlatformSpecific {
@@ -123,5 +149,29 @@ fn app_background(state: &Dshnext, _theme: &iced::Theme) -> iced::theme::Style {
     iced::theme::Style {
         background_color: pal.bg_app,
         text_color: pal.text,
+    }
+}
+
+/// 把 `window::screenshot` 的结果写成 PNG。`--shot` 用。
+pub fn write_png(path: &str, shot: &iced::window::Screenshot) {
+    let file = match std::fs::File::create(path) {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("创建 {path} 失败：{e}");
+            return;
+        }
+    };
+    let mut enc = png::Encoder::new(
+        std::io::BufWriter::new(file),
+        shot.size.width,
+        shot.size.height,
+    );
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    if let Err(e) = enc
+        .write_header()
+        .and_then(|mut w| w.write_image_data(&shot.rgba))
+    {
+        log::error!("写 PNG 失败：{e}");
     }
 }

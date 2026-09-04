@@ -39,7 +39,10 @@ open = "5"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+# fat 而不是 thin：接完后端与六个页面后 thin 出 18.78 MB、fat 出 17.35 MB
+# （省 1.4 MB），代价是全量 release 构建从 1 分钟涨到 5 分钟。日常开发走 dev，
+# 只有出包才 --release，这个交换划得来。
+lto = "fat"
 codegen-units = 1
 strip = true
 panic = "abort"

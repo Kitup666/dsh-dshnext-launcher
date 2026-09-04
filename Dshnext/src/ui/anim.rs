@@ -64,6 +64,8 @@ impl AnimState {
         !self.tweens.is_empty()
     }
 
+    /// 活跃补间数量。阶段 1 的 demo 页用它做读数展示，现在留作调试。
+    #[allow(dead_code)]
     pub fn tween_count(&self) -> usize {
         self.tweens.len()
     }

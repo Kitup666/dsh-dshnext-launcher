@@ -2,15 +2,17 @@
 
 DshDesk 的**原生 Rust 重写**（iced + wgpu，无 WebView）。目标：低 CPU/GPU/内存 + 视觉不退步 + 单 exe 零运行时依赖。
 
-**当前状态：阶段 0（可行性）、阶段 1（视觉地基 + 暗色精修 + 无边框窗口）、阶段 2（后端接入）已完成。下一步是阶段 3「页面移植」。**
+**当前状态：阶段 0～3 已完成。六个页面全部可用，下一步是阶段 4「收尾」。**
 
-后端已经真的接上了：环境探测、配置读写、profile 列表、进程启停全部实跑通过，
-`dsh`/`node`/`pnpm` 版本是从子进程真实读出来的，日志走 tokio channel 进 UI。
+功能已经完整：六个页面（启动/版本管理/插件管理/环境/控制台/设置）、四种模态、
+toast、Ctrl+1..6 切页。后端是真的——`dsh`/`node`/`pnpm` 版本从子进程读出，
+profile 扫真实目录，启停走 spawn/taskkill，日志经 tokio channel 进 UI。
 
 - 阶段 0 实测报告：[phase0/REPORT.md](phase0/REPORT.md)
-- 阶段 1 出图：`shots/phase1-{dark,light}.png`，并排对比 `shots/compare-{dark,light}.png`
+- 阶段 1 出图：并排对比 `shots/compare-{dark,light}.png`（与上一代同框）
 - 暗色精修（阶段 1.5）：`shots/compare-orevx.png`（左 orevx 参考、中旧暗色、右新暗色），设计依据见 [DESIGN.md §6 暗色精修](DESIGN.md)
-- 阶段 2 出图：`shots/phase2-dark.png`（真实环境数据）、`shots/phase2-running.png`（e2e 跑起来后的日志卡）
+- 阶段 2 出图：`shots/phase2-running.png`（e2e 跑起来后的日志卡）
+- 阶段 3 出图：`shots/p3-<页面>-dark.png` 六页 + `shots/p3-modal-dark.png`（模态）+ 三张亮色对照
 - 完整设计：[DESIGN.md](DESIGN.md)
 - 上一代（可用）：`../src-tauri` + `../src`，Tauri 2 + React，已出 NSIS 安装包
 
@@ -22,7 +24,11 @@ cargo run --release                      # 开窗，鼠标 hover 看过渡，按
 cargo run --release -- --shot out.png --after 2500 --theme dark   # 自截图退出
 cargo run --release -- --autotest --drawlog   # 程序自己触发 hover，出帧日志证明动画结束帧归零
 cargo run --release -- --e2e                  # 自动跑一遍「启动第一个 profile → 8s → 停止」，验证后端链路
+cargo run --release -- --page env             # 直接开在某一页（home/profiles/plugins/env/console/settings）
+cargo run --release -- --page settings --tall # 长页面出图用，窗口开到 1280x1400
 ```
+
+调试交互时用 `RUST_LOG=dshnext=debug`，每条 Message 都会打出来（Tick/ToastTick 已排除）。
 
 `--drawlog` 每 5s 打印真实绘制次数（独立线程数帧，不走 Message）。空闲时 delta=0；hover 一次补间约十几帧后归零。
 

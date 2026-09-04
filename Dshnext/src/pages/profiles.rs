@@ -1,0 +1,190 @@
+//! 版本管理页（对应上一代 `pages/Profiles.tsx`）：profile 列表 + CRUD 模态。
+
+use crate::app::{Dshnext, Message};
+use crate::pages::home::row_btn;
+use crate::theme::Palette;
+use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
+use crate::ui::icon;
+use crate::ui::modal::Dialog;
+use crate::ui::widgets::{self, Tone};
+use crate::ui::{card, mono, txt_bold};
+use iced::widget::{Column, column, row, space};
+use iced::{Alignment, Element};
+
+pub fn view(app: &Dshnext) -> Element<'_, Message> {
+    let pal = app.palette();
+
+    let head = widgets::page_head(
+        "版本管理",
+        "每个版本对应一个 harness profile（独立插件集与配置层），互不影响。",
+        Some(button::btn(
+            Spec::new("prof.new", "+ 新建版本", Variant::Primary),
+            pal,
+            &app.anim,
+            Some(Message::OpenDialog(Dialog::CreateProfile)),
+            Some(Message::HoverEnter("prof.new")),
+            Some(Message::HoverExit("prof.new")),
+        )),
+        pal,
+    );
+
+    let mut list = Column::new().spacing(0);
+    if app.profiles.is_empty() {
+        list = list.push(widgets::empty(
+            "还没有版本。点右上角「新建版本」创建第一个。",
+            pal,
+        ));
+    } else {
+        for (i, p) in app.profiles.iter().enumerate() {
+            if i > 0 {
+                list = list.push(widgets::divider(pal));
+            }
+            list = list.push(profile_row(app, p, pal));
+        }
+    }
+
+    column![head, card::card(list, pal)].spacing(18).into()
+}
+
+fn profile_row<'a>(
+    app: &'a Dshnext,
+    p: &'a crate::core::profiles::ProfileInfo,
+    pal: &'static Palette,
+) -> Element<'a, Message> {
+    let is_running = app.running(&p.name).is_some();
+    let is_selected = app.selected == p.name;
+    let plugin_count = p.dependencies.len();
+
+    let mut name_row = row![txt_bold(p.name.clone()).size(13).color(pal.text)]
+        .spacing(8)
+        .align_y(Alignment::Center);
+    if is_running {
+        name_row = name_row.push(widgets::tag("运行中", Tone::Ok, pal));
+    }
+    if is_selected {
+        name_row = name_row.push(widgets::tag("当前", Tone::Accent, pal));
+    }
+    name_row = name_row.push(widgets::tag(
+        format!("{plugin_count} 个插件"),
+        Tone::Neutral,
+        pal,
+    ));
+
+    let bundles = if p.bundles.is_empty() {
+        "未声明 bundle".to_string()
+    } else {
+        p.bundles.join(" + ")
+    };
+
+    let main = column![
+        name_row,
+        mono(widgets::ellipsize(&bundles, 88))
+            .size(10.5)
+            .color(pal.text_3),
+    ]
+    .spacing(2);
+
+    // 启动/停止 + 插件 + 复制 + 重命名 + 打开目录 + 删除（与上一代同一组）
+    let primary: Element<'_, Message> = if is_running {
+        row_btn(
+            app,
+            "row.stop",
+            "停止",
+            Variant::Danger,
+            Message::Stop(p.name.clone()),
+            pal,
+        )
+    } else if app.env_ready() {
+        row_btn(
+            app,
+            "row.start",
+            "启动",
+            Variant::Primary,
+            Message::Start(p.name.clone()),
+            pal,
+        )
+    } else {
+        // 环境没就绪时按钮在位但禁用（对应上一代 disabled={!env?.dsh_version}）
+        button::btn(
+            Spec::new("row.start", "启动", Variant::Primary)
+                .size(BtnSize::Small)
+                .disabled(true),
+            pal,
+            &app.anim,
+            None,
+            None,
+            None,
+        )
+    };
+
+    let actions = row![
+        primary,
+        // 「插件」一次完成两件事：把这一行设为当前版本，再跳插件页。
+        // 早先拆成两个按钮（第二个只显示一个 →），看上去像掉了标签的野字符。
+        row_btn(
+            app,
+            "row.plugins",
+            "插件",
+            Variant::Secondary,
+            Message::GotoPlugins(p.name.clone()),
+            pal
+        ),
+        row_btn(
+            app,
+            "row.copy",
+            "复制",
+            Variant::Secondary,
+            Message::OpenDialog(Dialog::CopyProfile(p.name.clone())),
+            pal
+        ),
+        row_btn(
+            app,
+            "row.rename",
+            "重命名",
+            Variant::Secondary,
+            Message::OpenDialog(Dialog::RenameProfile(p.name.clone())),
+            pal
+        ),
+        row_btn(
+            app,
+            "row.dir",
+            "打开目录",
+            Variant::Secondary,
+            Message::OpenPath(p.path.clone()),
+            pal
+        ),
+        space::horizontal().width(4.0),
+        row_btn(
+            app,
+            "row.del",
+            "删除",
+            Variant::QuietDanger,
+            Message::OpenDialog(Dialog::DeleteProfile(p.name.clone())),
+            pal
+        ),
+    ]
+    .spacing(7);
+
+    let content = widgets::list_row(
+        Some(widgets::icon_badge(
+            icon::icon::<Message>(icon::VERSIONS, 18.0, pal.text_2),
+            pal,
+        )),
+        main,
+        actions,
+        is_selected,
+        pal,
+    );
+
+    // 整行可点选中（对应上一代 onClick={() => setSelected(x.name)}）。
+    // 行内按钮先 capture，不会被这层吃掉。
+    widgets::hoverable(
+        content,
+        None,
+        &app.anim,
+        pal,
+        Some(Message::Select(p.name.clone())),
+        None,
+        None,
+    )
+}
