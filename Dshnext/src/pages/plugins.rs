@@ -43,6 +43,7 @@ fn toolbar_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Mess
             current,
             Message::Select,
             180.0,
+            9,
             pal,
         ));
     }

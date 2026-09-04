@@ -69,6 +69,7 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
             current,
             |v: String| Message::Select(v.split(" · ").next().unwrap_or(&v).to_string()),
             190.0,
+            15, // hero：与 48px 的启动按钮等高（上一代 .hero-actions .select）
             pal,
         ));
     }

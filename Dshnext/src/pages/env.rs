@@ -87,6 +87,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
                 Some(app.node_pick.clone()),
                 Message::PickNode,
                 150.0,
+                9,
                 pal,
             ));
         }
@@ -189,6 +190,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
                 })
             },
             170.0,
+            9,
             pal,
         ));
         r = r.push(action_btn(

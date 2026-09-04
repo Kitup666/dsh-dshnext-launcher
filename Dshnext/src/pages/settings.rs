@@ -198,7 +198,7 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
                             .map(|(_, v)| v.to_string())
                             .unwrap_or_default();
                         Message::CfgNodeMirror(v)
-                    }, 260.0, pal),
+                    }, 260.0, 9, pal),
                     iced::widget::container(widgets::input(
                         "https://nodejs.org/dist",
                         &app.cfg_draft.node_mirror,
@@ -224,7 +224,7 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
                             .map(|(_, v)| v.to_string())
                             .unwrap_or_default();
                         Message::CfgNpmRegistry(v)
-                    }, 260.0, pal),
+                    }, 260.0, 9, pal),
                     iced::widget::container(widgets::input(
                         "https://registry.npmjs.org",
                         &app.cfg_draft.npm_registry,

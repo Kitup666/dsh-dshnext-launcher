@@ -323,11 +323,15 @@ pub fn check<'a, Message: Clone + 'a>(
 
 /// 下拉选择（CSS `.select`）。选项收 owned `Vec<T>`——`pick_list` 的
 /// `L: Borrow<[T]>` 允许 Vec，省得调用方为了凑 `&'a [T]` 去 leak。
+/// `vpad` 是纵向内边距：pick_list 没有 `.height()`，高度只能靠 padding 撑。
+/// 上一代基础 `.select` 高 36px（vpad 9），首页 hero 的 `.select` 覆盖成 48px
+/// 以与 `.btn-hero` 等高（vpad 15）——两者不同高会让下拉顶边比按钮低、看着「陷下去」。
 pub fn dropdown<'a, T, Message>(
     options: Vec<T>,
     selected: Option<T>,
     on_select: impl Fn(T) -> Message + 'a,
     width: f32,
+    vpad: u16,
     pal: &'static Palette,
 ) -> Element<'a, Message>
 where
@@ -336,7 +340,7 @@ where
 {
     pick_list(options, selected, on_select)
         .width(Length::Fixed(width))
-        .padding(Padding::from([9, 12]))
+        .padding(Padding::from([vpad, 12]))
         .text_size(11.5)
         .font(FONT_SANS)
         .style(move |_theme: &Theme, status: pick_list::Status| {

@@ -47,6 +47,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             Some(app.log_filter.clone()),
             Message::SetLogFilter,
             180.0,
+            9,
             pal
         ),
         widgets::check("自动滚动", app.auto_scroll, Message::ToggleAutoScroll, pal),
