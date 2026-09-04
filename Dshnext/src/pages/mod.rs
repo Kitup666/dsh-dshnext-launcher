@@ -340,7 +340,9 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
 
     let item = container(inner)
         .width(Fill)
-        .height(36.0)
+        // iced 的 container 默认顶对齐；只给 height 会让图标+文字贴在 36px 行的
+        // 顶部、下面空一截，看着整列「偏上」。center_y 同时定高 + 垂直居中（同 brand 的 D）。
+        .center_y(36.0)
         .padding(Padding::from([0, 11]))
         .style(move |_theme: &Theme| container::Style {
             text_color: Some(text_c),
