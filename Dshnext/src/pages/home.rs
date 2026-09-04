@@ -2,17 +2,19 @@
 
 use crate::app::{Dshnext, Message};
 use crate::pages::{Page, fmt_uptime};
-use crate::theme::{HERO_NUM_SIZE, Palette};
+use crate::theme::{FS_BODY, FS_HERO, FS_MICRO, FS_TINY, GAP_SECTION, Palette};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono, txt, txt_bold};
 use iced::widget::{Column, Row, column, container, row, space};
-use iced::{Alignment, Border, Element, Fill, Length, Padding, Theme};
+use iced::{Alignment, Element, Fill, Length};
 
 pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let pal = app.palette();
+    // 首页没有 page_head——hero 自己就是页头，所以它与下面的列表卡之间用大档间距，
+    // 不是 GAP_CARD（那是同级卡片之间的量）。
     column![hero(app, pal), instances(app, pal)]
-        .spacing(16)
+        .spacing(GAP_SECTION)
         .into()
 }
 
@@ -34,9 +36,9 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
     };
 
     let left = column![
-        txt("DEEPSEEK HARNESS").size(9.5).color(pal.text_3),
-        txt_bold(title).size(HERO_NUM_SIZE * 0.62).color(pal.text),
-        txt(desc).size(13).color(pal.text_2),
+        txt("DEEPSEEK HARNESS").size(FS_MICRO).color(pal.text_3),
+        txt_bold(title).size(FS_HERO).color(pal.text),
+        txt(desc).size(FS_BODY).color(pal.text_2),
     ]
     .spacing(6);
 
@@ -103,7 +105,8 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
 
     let meta = meta_strip(app, running, pal);
 
-    container(
+    // 英雄卡：圆角/内边距/阴影都比普通卡片高一档（ui::card::card_hero）。
+    card::card_hero(
         column![
             row![left, space::horizontal(), actions]
                 .width(Fill)
@@ -111,22 +114,9 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
             widgets::divider(pal),
             meta,
         ]
-        .spacing(24),
+        .spacing(GAP_SECTION),
+        pal,
     )
-    .width(Fill)
-    .padding(Padding::from([28, 32]))
-    .style(move |_theme: &Theme| container::Style {
-        text_color: Some(pal.text),
-        background: Some(pal.surface_1.into()),
-        border: Border {
-            color: pal.card_border,
-            width: 0.3,
-            radius: 20.0.into(),
-        },
-        shadow: pal.shadow_card,
-        snap: true,
-    })
-    .into()
 }
 
 /// meta 信息带（CSS `.meta-strip`）：状态 / 时长 / 地址 / PID / 插件数。
@@ -143,11 +133,11 @@ fn meta_strip<'a>(
         .unwrap_or(0);
 
     let status: Element<'_, Message> = match running {
-        Some(_) => row![widgets::dot(pal.ok), txt_bold("运行中").size(13).color(pal.text)]
+        Some(_) => row![widgets::dot(pal.ok), txt_bold("运行中").size(FS_BODY).color(pal.text)]
             .spacing(7)
             .align_y(Alignment::Center)
             .into(),
-        None => txt_bold("空闲").size(13).color(pal.text).into(),
+        None => txt_bold("空闲").size(FS_BODY).color(pal.text).into(),
     };
 
     // 空闲时这只是「将要用的」端口，用弱色区分，否则整行读起来像已经在服务。
@@ -172,27 +162,27 @@ fn meta_strip<'a>(
                     .map(|p| fmt_uptime(p.uptime_secs))
                     .unwrap_or_else(|| DASH.into())
             )
-            .size(13)
+            .size(FS_BODY)
             .color(pal.text)
             .into(),
             150.0,
             pal
         ),
-        meta_cell("WEB 地址", mono(addr).size(13).color(addr_color).into(), 190.0, pal),
+        meta_cell("WEB 地址", mono(addr).size(FS_BODY).color(addr_color).into(), 190.0, pal),
         meta_cell(
             "进程 PID",
             // 有值走等宽（数字对齐），无值走正文——同一个破折号在两种字体下宽度不同，
             // 混用会让两个空位看起来是不同符号。
             match running {
-                Some(p) => mono(p.pid.to_string()).size(13).color(pal.text).into(),
-                None => txt_bold(DASH).size(13).color(pal.text).into(),
+                Some(p) => mono(p.pid.to_string()).size(FS_BODY).color(pal.text).into(),
+                None => txt_bold(DASH).size(FS_BODY).color(pal.text).into(),
             },
             130.0,
             pal
         ),
         meta_cell(
             "插件",
-            txt_bold(format!("{plugin_count} 个")).size(13).color(pal.text).into(),
+            txt_bold(format!("{plugin_count} 个")).size(FS_BODY).color(pal.text).into(),
             100.0,
             pal
         ),
@@ -210,7 +200,7 @@ fn meta_cell<'a>(
     width: f32,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
-    container(column![txt(label).size(9).color(pal.text_3), value].spacing(3))
+    container(column![txt(label).size(FS_MICRO).color(pal.text_3), value].spacing(3))
         .width(Length::Fixed(width))
         .into()
 }
@@ -249,7 +239,7 @@ fn instance_row<'a>(
 ) -> Element<'a, Message> {
     let main = column![
         row![
-            txt_bold(p.profile.clone()).size(13).color(pal.text),
+            txt_bold(p.profile.clone()).size(FS_BODY).color(pal.text),
             widgets::tag("运行中", Tone::Ok, pal),
         ]
         .spacing(8)
@@ -260,7 +250,7 @@ fn instance_row<'a>(
             p.pid,
             fmt_uptime(p.uptime_secs)
         ))
-        .size(11.5)
+        .size(FS_TINY)
         .color(pal.text_3),
     ]
     .spacing(2);

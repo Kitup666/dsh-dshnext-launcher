@@ -5,7 +5,7 @@
 //! 同一个配置文件，删了会让上一代读不到自己的设置。
 
 use crate::app::{Dshnext, Message, Mode};
-use crate::theme::Palette;
+use crate::theme::{FS_TINY, Palette};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, txt};
@@ -45,15 +45,15 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         pal,
     );
 
-    column![
+    widgets::page_stack(
         head,
-        appearance(app, pal),
-        model_access(app, pal),
-        launch_behavior(app, pal),
-        sources(app, pal),
-        about(app, pal),
-    ]
-    .spacing(18)
+        Column::new()
+            .push(appearance(app, pal))
+            .push(model_access(app, pal))
+            .push(launch_behavior(app, pal))
+            .push(sources(app, pal))
+            .push(about(app, pal)),
+    )
     .into()
 }
 
@@ -156,14 +156,13 @@ fn launch_behavior<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, M
                 Message::CfgAutoOpen,
                 pal
             ),
-            // 说明文字缩进到复选框标签的左边缘（方框 15px + 间距 9px），
-            // 否则这一组的左边是锯齿状的。
-            row![
-                space::horizontal().width(24.0),
-                txt("Web 界面在系统默认浏览器中打开。")
-                    .size(11.5)
-                    .color(pal.text_3),
-            ],
+            // 说明文字与卡片内容列同左边缘（不缩进到复选框标签下）。早先按「对齐它
+            // 解释的那个标签」缩进了 24px（方框 15 + 间距 9），量下来确实对齐了标签，
+            // 但它是整张卡里唯一不在内容列上的一行——同页另两处 field 的说明都在
+            // 内容列上，扫下来就这一行突出来。表单卡里共享一条左边缘比「对齐标签」重要。
+            txt("Web 界面在系统默认浏览器中打开。")
+                .size(FS_TINY)
+                .color(pal.text_3),
         ]
         .spacing(4),
         pal,
@@ -291,7 +290,7 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
             .push(space::vertical().height(4.0))
             .push(
                 txt("单文件绿色版，无需安装运行时。")
-                    .size(11.5)
+                    .size(FS_TINY)
                     .color(pal.text_3),
             )
             .spacing(4)

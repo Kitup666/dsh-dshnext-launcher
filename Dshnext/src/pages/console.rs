@@ -7,7 +7,7 @@
 use crate::app::{Dshnext, Message};
 use crate::core::event::LogStream;
 use crate::pages::fmt_time;
-use crate::theme::{Palette, R_CTL};
+use crate::theme::{FS_MICRO, FS_TINY, GAP_SECTION, Palette, R_CTL};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono};
@@ -100,7 +100,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         if skipped > 0 {
             lines = lines.push(
                 mono(format!("…前 {skipped} 行已折叠（用「复制」导出完整日志）"))
-                    .size(10)
+                    .size(FS_MICRO)
                     .color(pal.text_3),
             );
         }
@@ -132,6 +132,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     };
 
     // 控制台要占满剩余高度：卡片内部自己滚，页面外层不滚（见 pages::view）。
+    // 这里不用 page_stack：它给的是 Shrink 的 Column，撑不满高度。
     column![
         head,
         container(
@@ -142,10 +143,10 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         )
         .width(Fill)
         .height(Fill)
-        .padding(Padding::from([24, 26]))
+        .padding(Padding::from(24))
         .style(card::card_style(pal)),
     ]
-    .spacing(18)
+    .spacing(GAP_SECTION)
     .height(Fill)
     .into()
 }
@@ -178,16 +179,16 @@ fn log_row<'a>(
         LogStream::System => pal.accent,
         LogStream::Plugin => pal.teal,
     };
-    let mut r = row![mono(fmt_time(l.ts)).size(10).color(pal.text_3)].spacing(9);
+    let mut r = row![mono(fmt_time(l.ts)).size(FS_MICRO).color(pal.text_3)].spacing(9);
     // 「全部来源」时标出归属，与上一代一致
     if app.log_filter == ALL {
         r = r.push(
             mono(format!("[{}]", l.profile))
-                .size(10)
+                .size(FS_MICRO)
                 .color(pal.text_3),
         );
     }
-    r.push(mono(l.line.as_str()).size(11.5).color(color)).into()
+    r.push(mono(l.line.as_str()).size(FS_TINY).color(color)).into()
 }
 
 fn tool_btn<'a>(

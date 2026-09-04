@@ -4,6 +4,7 @@
 //! ```text
 //! dshnext [--theme dark|light] [--shot 路径 [--after 毫秒]]
 //!         [--page home|profiles|plugins|env|console|settings]
+//!         [--switch-to <同上> [--switch-at 毫秒]]
 //!         [--drawlog] [--autotest] [--e2e] [--all-backends]
 //! ```
 //!
@@ -99,10 +100,27 @@ fn main() -> iced::Result {
     };
 
     let e2e = flag("--e2e");
+    // --switch-to <页> [--switch-at 毫秒]：开窗后自动切页，用来把 --shot 的快门
+    // 卡在切页动画中间（单靠 --after 只能截到落定态）。
+    let switch = opt("--switch-to").map(|name| {
+        let page = match name.as_str() {
+            "profiles" => Page::Profiles,
+            "plugins" => Page::Plugins,
+            "env" => Page::Env,
+            "console" => Page::Console,
+            "settings" => Page::Settings,
+            _ => Page::Home,
+        };
+        let at = opt("--switch-at")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000);
+        (page, at)
+    });
     let mut application = iced::application(
         move || {
             let mut app = Dshnext::new(mode, shot.clone(), autotest, e2e);
             app.page = start_page;
+            app.switch = switch;
             app
         },
         Dshnext::update,

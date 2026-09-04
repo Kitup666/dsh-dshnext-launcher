@@ -2,7 +2,7 @@
 
 DshDesk 的**原生 Rust 重写**（iced 0.14 + wgpu，无 WebView）。目标：低 CPU/GPU/内存 + 视觉不退步 + 单 exe 零运行时依赖。
 
-**当前状态：阶段 0～4 全部完成。** 六个页面可用、后端真实接通、`iced_test` 用例全绿、性能逐项实测、单 exe + NSIS 安装包已产出。
+**当前状态：阶段 0～5 全部完成。** 六个页面可用、后端真实接通、`iced_test` 用例全绿、性能逐项实测、单 exe + NSIS 安装包已产出；阶段 5 补了切页入场动画与一轮排版/层级收口，空闲零帧不变。
 
 功能完整：六个页面（启动/版本管理/插件管理/环境/控制台/设置）、四种模态、toast、
 Ctrl+1..6 切页、无边框自绘标题栏。后端是真的——`dsh`/`node`/`pnpm` 版本从子进程读出，
@@ -14,7 +14,7 @@ profile 扫真实目录，启停走 spawn/taskkill，日志经 tokio channel 进
 |---|---|---|---|
 | 空闲 CPU（全核） | 0.26% | **0.0015%** | ✅ < 0.1% |
 | 空闲 GPU | 1.72% | **0.00%** | ✅ ~0% |
-| 空闲出帧 | 常驻 setInterval | **delta=0**（开窗后零帧） | ✅ 0 |
+| 空闲出帧 | 常驻 setInterval | **delta=0**（开窗后零帧；切页动画那 5s 出 31 帧，之后立刻归零） | ✅ 0 |
 | 常驻内存（私有工作集） | 199 MB（7 进程） | **88.5 MB**（DX12，稳定不爬） | ✅ ≤ 90，降 56% |
 | 单 exe | 3 MB + 需 WebView2 | **17.31 MB** 零依赖（含 4.34 MB 字体；`+crt-static`） | ✅ ≤ 18 |
 | 首帧画好 | 236 ms | ⚠️ 本机 GUI+DX12 **~1.27 s**（见下） | 待干净 VM 复核 |
@@ -33,6 +33,8 @@ cargo run --release -- --autotest --drawlog   # 程序自己触发 hover，出�
 cargo run --release -- --e2e                  # 自动跑「启动第一个 profile → 8s → 停止」，验证后端链路
 cargo run --release -- --page env             # 直接开在某一页（home/profiles/plugins/env/console/settings）
 cargo run --release -- --page settings --tall # 长页面出图用，窗口开到 1280x1400
+# 截切页动画的中间帧：--switch-at 与 --after 的差就是快门落在过渡的第几毫秒
+cargo run --release -- --page home --switch-to settings --switch-at 4000 --shot mid.png --after 4095
 ```
 
 调试交互用 `RUST_LOG=dshnext=debug`，每条 Message 都会打出来（Tick/ToastTick 已排除）。
@@ -49,8 +51,9 @@ cargo run --release -- --page settings --tall # 长页面出图用，窗口开�
 
 ## 出图与对照
 
-- 六页 × 明暗：`shots/p4-<页面>-{dark,light}.png`
-- **与上一代并排对比**：`shots/compare-p4/<页面>.png`（左 Tauri、右 Dshnext，六页齐全）
+- 六页 × 明暗：`shots/p5-<页面>-{dark,light}.png`（阶段 4 的那批留在 `p4-*`）
+- **与上一代并排对比**：`shots/compare-p5/<页面>.png`（左 Tauri、右 Dshnext，六页齐全；`python tools/make-compare.py --gen p5` 重出）
+- 切页动画取证：`shots/anim/{t075,t035,settled}.png`（同一次过渡的三个时刻）
 - 暗色精修依据：`shots/compare-orevx.png`；设计全文：[DESIGN.md](DESIGN.md)
 - 阶段 0 探针与测量脚本：`phase0/`（保留，性能回归用；每次改动重跑 `phase0/tools/measure-idle.ps1`）
 
@@ -58,13 +61,13 @@ cargo run --release -- --page settings --tall # 长页面出图用，窗口开�
 
 ```
 phase0/       阶段 0 探针工程 + 实测报告 + 测量脚本（保留，用于性能回归）
-src/main.rs   入口：DX12 限定 + 字体加载 + --shot/--autotest/--drawlog/--e2e
+src/main.rs   入口：DX12 限定 + 字体加载 + --shot/--autotest/--drawlog/--e2e/--switch-to
 src/app.rs    顶层 State/Message
 src/update.rs 全部状态迁移 + subscription（空闲零订阅）
 src/tests.rs  iced_test 用例（view↔update 契约，14 例）
 src/bridge.rs core 与 iced 的桥：channel / ProcMap 全局持有 + Subscription 事件流
-src/theme.rs  两套设计令牌（照抄上一代 styles.css）
-src/ui/       通用组件：anim/button/card/icon/modal/titlebar/widgets
+src/theme.rs  设计令牌：两套配色 + 字号阶梯 + 圆角/节奏/阴影两档层级
+src/ui/       通用组件：anim/button/card/icon/modal/reveal/titlebar/widgets
 src/core/     从上一代复制的后端（业务逻辑不改 + 新增 event.rs）
 src/pages/    六个页面
 assets/       图标（10 个 svg）、内嵌字体（4.34 MB）

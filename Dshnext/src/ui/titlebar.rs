@@ -8,7 +8,7 @@
 //! 纪律：热区必须**在最上层**（`stack!` 的最后一个孩子），否则被卡片吃掉点击；
 //! 但它们只在边缘 6px，正常内容区不受影响。
 
-use crate::theme::{self, Palette};
+use crate::theme::{self, FS_SMALL, Palette};
 use crate::ui::anim::{self, AnimState};
 use crate::ui::{txt, txt_bold};
 use iced::widget::{Row, container, mouse_area, row, space};
@@ -47,7 +47,7 @@ pub fn titlebar<'a, Message: Clone + 'a>(
 
     // 可拖动区：标题文字 + 右侧留白，整条都能抓。
     let grab = mouse_area(
-        container(txt(title).size(12.5).color(pal.text_3))
+        container(txt(title).size(FS_SMALL).color(pal.text_3))
             .height(Fill)
             .width(Fill)
             .align_y(Alignment::Center)
@@ -132,7 +132,7 @@ fn win_btn<'a, Message: Clone + 'a>(
         theme::lerp(pal.text_3, pal.text, t)
     };
 
-    let body = container(txt_bold(glyph.text()).size(12).color(fg))
+    let body = container(txt_bold(glyph.text()).size(FS_SMALL).color(fg))
         .width(Length::Fixed(34.0))
         .height(Length::Fixed(26.0))
         .align_x(Alignment::Center)

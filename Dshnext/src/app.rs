@@ -63,12 +63,19 @@ pub struct Dshnext {
     pub anim: AnimState,
     pub window: Option<window::Id>,
     pub shot: Option<Shot>,
+    /// `--switch-to <页> --switch-at <毫秒>`：开窗后自动切一次页。
+    /// 存在的理由是**动画取证**：`--shot --after` 截的永远是落定态，配上这个才能
+    /// 把快门卡在过渡中间（`--switch-at` 与 `--after` 差多少，就截到第几毫秒）。
+    pub switch: Option<(Page, u64)>,
     pub autotest: bool,
     pub e2e: bool,
     pub maximized: bool,
 
     // ---- 导航与浮层 ----
     pub page: Page,
+    /// 切页前的那一页，只为侧边栏交叉淡入服务（新旧两项同时插值，见 `pages::nav_item`）。
+    /// 落定后不清空——`anim::NAV` 归零时它就不再被读了，清空反而要多一条消息。
+    pub prev_page: Option<Page>,
     pub dialog: Option<Dialog>,
     /// 模态输入框的草稿值。
     pub draft: String,
@@ -219,11 +226,13 @@ impl Dshnext {
             anim: AnimState::default(),
             window: None,
             shot,
+            switch: None,
             autotest,
             e2e,
             maximized: false,
 
             page: Page::Home,
+            prev_page: None,
             dialog: None,
             draft: String::new(),
             toasts: Vec::new(),

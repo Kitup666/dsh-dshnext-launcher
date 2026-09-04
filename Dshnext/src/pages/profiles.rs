@@ -2,7 +2,7 @@
 
 use crate::app::{Dshnext, Message};
 use crate::pages::home::row_btn;
-use crate::theme::Palette;
+use crate::theme::{FS_BODY, FS_TINY, Palette};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal::Dialog;
@@ -43,7 +43,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         }
     }
 
-    column![head, card::card(list, pal)].spacing(18).into()
+    widgets::page_stack(head, Column::new().push(card::card(list, pal))).into()
 }
 
 fn profile_row<'a>(
@@ -55,7 +55,7 @@ fn profile_row<'a>(
     let is_selected = app.selected == p.name;
     let plugin_count = p.dependencies.len();
 
-    let mut name_row = row![txt_bold(p.name.clone()).size(13).color(pal.text)]
+    let mut name_row = row![txt_bold(p.name.clone()).size(FS_BODY).color(pal.text)]
         .spacing(8)
         .align_y(Alignment::Center);
     if is_running {
@@ -79,12 +79,14 @@ fn profile_row<'a>(
     let main = column![
         name_row,
         mono(widgets::ellipsize(&bundles, 88))
-            .size(11.5)
+            .size(FS_TINY)
             .color(pal.text_3),
     ]
     .spacing(2);
 
     // 启动/停止 + 插件 + 复制 + 重命名 + 打开目录 + 删除（与上一代同一组）
+    // 「启动」用 Accent 而非 Primary：这一屏的主 CTA 是右上角的「+ 新建版本」，
+    // 列表每行再来一个渐变按钮就没有主次了。
     let primary: Element<'_, Message> = if is_running {
         row_btn(
             app,
@@ -99,14 +101,14 @@ fn profile_row<'a>(
             app,
             "row.start",
             "启动",
-            Variant::Primary,
+            Variant::Accent,
             Message::Start(p.name.clone()),
             pal,
         )
     } else {
         // 环境没就绪时按钮在位但禁用（对应上一代 disabled={!env?.dsh_version}）
         button::btn(
-            Spec::new("row.start", "启动", Variant::Primary)
+            Spec::new("row.start", "启动", Variant::Accent)
                 .size(BtnSize::Small)
                 .disabled(true),
             pal,

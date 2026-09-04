@@ -2,7 +2,7 @@
 
 use crate::app::{Dshnext, Message, PluginTab};
 use crate::pages::home::row_btn;
-use crate::theme::Palette;
+use crate::theme::{FS_BODY, FS_SMALL, FS_TINY, Palette};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal::Dialog;
@@ -21,9 +21,13 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         pal,
     );
 
-    column![head, toolbar_card(app, pal), list_card(app, pal)]
-        .spacing(18)
-        .into()
+    widgets::page_stack(
+        head,
+        Column::new()
+            .push(toolbar_card(app, pal))
+            .push(list_card(app, pal)),
+    )
+    .into()
 }
 
 /// 工具条卡：版本选择 + 搜索 + 分页 + 手动安装。
@@ -31,12 +35,12 @@ fn toolbar_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Mess
     let profile_names: Vec<String> = app.profiles.iter().map(|p| p.name.clone()).collect();
     let current = (!app.selected.is_empty()).then(|| app.selected.clone());
 
-    let mut r = row![txt("版本").size(12).color(pal.text_2)]
+    let mut r = row![txt("版本").size(FS_SMALL).color(pal.text_2)]
         .spacing(10)
         .align_y(Alignment::Center);
 
     if profile_names.is_empty() {
-        r = r.push(txt("（无可用版本）").size(12.5).color(pal.text_3));
+        r = r.push(txt("（无可用版本）").size(FS_SMALL).color(pal.text_3));
     } else {
         r = r.push(widgets::dropdown(
             profile_names,
@@ -139,8 +143,8 @@ fn installed_list<'a>(
                 pal,
             )),
             column![
-                txt_bold(p.name.clone()).size(13).color(pal.text),
-                mono(p.version.clone()).size(11.5).color(pal.text_3),
+                txt_bold(p.name.clone()).size(FS_BODY).color(pal.text),
+                mono(p.version.clone()).size(FS_TINY).color(pal.text_3),
             ]
             .spacing(2),
             row![row_btn(
@@ -198,7 +202,7 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
             col = col.push(widgets::divider(pal));
         }
         let already = installed.contains(&m.name.as_str());
-        let mut name_row = row![txt_bold(m.name.clone()).size(13).color(pal.text)]
+        let mut name_row = row![txt_bold(m.name.clone()).size(FS_BODY).color(pal.text)]
             .spacing(8)
             .align_y(Alignment::Center);
         if !m.version.is_empty() {
@@ -233,7 +237,7 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
             column![
                 name_row,
                 txt(widgets::ellipsize(&desc, 96))
-                    .size(11.5)
+                    .size(FS_TINY)
                     .color(pal.text_3),
             ]
             .spacing(2),
@@ -248,7 +252,7 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
                 "还有 {} 条未显示，用搜索框收窄范围。",
                 shown.len() - cap
             ))
-            .size(11.5)
+            .size(FS_TINY)
             .color(pal.text_3),
         );
     }
@@ -266,7 +270,7 @@ fn install_btn<'a>(
         Spec::new(
             "plg.install",
             if already { "重新安装" } else { "安装" },
-            Variant::Primary,
+            Variant::Accent,
         )
         .size(BtnSize::Small)
         .disabled(!enabled),

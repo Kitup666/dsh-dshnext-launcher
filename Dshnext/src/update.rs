@@ -5,7 +5,7 @@ use crate::app::{Dshnext, Message, Mode, PluginTab, TOAST_TTL};
 use crate::bridge;
 use crate::core::event::{CoreEvent, LogStream};
 use crate::pages::{self, Page};
-use crate::ui::anim::HOVER_DUR;
+use crate::ui::anim::{self, HOVER_DUR};
 use crate::ui::modal::Dialog;
 use crate::ui::widgets::ToastKind;
 use iced::{Subscription, Task, window};
@@ -32,6 +32,13 @@ impl Dshnext {
                     tasks.push(Task::perform(
                         async move { tokio::time::sleep(Duration::from_millis(after)).await },
                         |_| Message::Shoot,
+                    ));
+                }
+                // --switch-to：定时切一次页，让 --shot 能截在过渡中间。
+                if let Some((page, at)) = self.switch {
+                    tasks.push(Task::perform(
+                        async move { tokio::time::sleep(Duration::from_millis(at)).await },
+                        move |_| Message::Goto(page),
                     ));
                 }
                 if self.autotest {
@@ -105,7 +112,11 @@ impl Dshnext {
 
             // ---------- 导航与浮层 ----------
             Message::Goto(page) => {
-                self.page = page;
+                if self.page != page {
+                    self.prev_page = Some(self.page);
+                    self.page = page;
+                    self.start_page_anim();
+                }
                 // 进插件页时按需拉一次已装列表（上一代是 useEffect 依赖 selected）。
                 if page == Page::Plugins && !self.selected.is_empty() {
                     return Task::done(Message::RefreshPlugins);
@@ -118,7 +129,11 @@ impl Dshnext {
             }
             Message::GotoPlugins(name) => {
                 self.selected = name;
-                self.page = Page::Plugins;
+                if self.page != Page::Plugins {
+                    self.prev_page = Some(self.page);
+                    self.page = Page::Plugins;
+                    self.start_page_anim();
+                }
                 Task::done(Message::RefreshPlugins)
             }
             Message::Select(name) => {
@@ -568,6 +583,22 @@ impl Dshnext {
                 Task::batch(names.into_iter().map(|n| Task::done(Message::Stop(n))))
             }
         }
+    }
+
+    /// 起一次切页入场补间。**只在页面真的变了时调**（`Goto` 到当前页是常事：
+    /// 侧边栏点两下、Ctrl+N 按重复），否则会闪一下。
+    ///
+    /// `PAGE` 从 1 跑到 0（1 = 刚切过来）。为什么不是 0→1：`AnimState::value`
+    /// 对没有记录的 key 返回 0.0，而 0 正好是落定态，于是冷启动与 `--page`
+    /// 出图都不必预置初值，也不会有第一帧的突兀位移。
+    ///
+    /// `NAV` 同帧起跑：侧边栏选中指示条从上一个位置滑到新位置，靠的是同一个
+    /// 补间值（`pages::mod` 里按它插值 y 偏移），不是各自计时——两个动画不同步
+    /// 会看出「内容先到、条子后到」。
+    fn start_page_anim(&mut self) {
+        let now = Instant::now();
+        self.anim.restart(anim::PAGE, 1.0, 0.0, anim::PAGE_DUR, now);
+        self.anim.restart(anim::NAV, 1.0, 0.0, anim::PAGE_DUR, now);
     }
 
     /// 模态确认：按 Dialog 变体分派到对应后端调用。

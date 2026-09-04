@@ -5,7 +5,7 @@
 //! 里当前 key 的补间值 t∈[0,1]，颜色用 `theme::lerp` 插值——这就是 CSS
 //! `transition: background .14s` 的等价物。Pressed/Disabled 仍走 Status。
 
-use crate::theme::{self, Palette, R_CTL};
+use crate::theme::{self, FS_SMALL, FS_TINY, FS_TITLE, Palette, R_CTL};
 use crate::ui::anim::{self, AnimState};
 use crate::ui::txt_bold;
 use iced::gradient::Linear;
@@ -15,8 +15,14 @@ use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
-    /// `.btn-primary`：accent 竖向渐变 + 彩色投影。
+    /// `.btn-primary`：accent 竖向渐变 + 彩色投影。**一屏只许有一个**
+    /// （`frontend-design` 的 CTA 纪律）：渐变+投影是最重的强调手段，列表里每行
+    /// 来一个的话，谁都不显眼，只显得花。行内的正向动作用 `Accent`。
     Primary,
+    /// 行内正向动作：surface 底 + accent 描边 + accent 字。比 Secondary 显眼、
+    /// 比 Primary 安静，一屏出现多次也不会打架（版本管理每行的「启动」、
+    /// 环境页三行的「安装」、插件市场每行的「安装」都是它）。
+    Accent,
     /// `.btn`：surface_1 底 + 描边。
     Secondary,
     /// `.btn-danger`：纯 bad 底。
@@ -41,13 +47,16 @@ pub enum Size {
 
 impl Size {
     fn text_size(self) -> f32 {
+        // 走统一字号阶梯（theme.rs）。上一代按 rem 直译出 11 / 11.6 / 13.7 三个
+        // 邻近怪值，差 0.6px 谁也看不出，只是让阶梯多出三档。
         match self {
-            // CSS 根字号 14px：.79rem≈11 / .83rem≈11.6 / .98rem≈13.7
-            Size::Small => 11.0,
-            Size::Medium => 11.6,
-            Size::Hero => 13.7,
+            Size::Small => FS_TINY,
+            Size::Medium => FS_SMALL,
+            Size::Hero => FS_TITLE,
         }
     }
+    /// 圆角随层级走（`frontend-design` 的 elevation 纪律）：小控件贴合内容用小圆角，
+    /// hero 是页面主 CTA，圆角要和它上面的卡片（R_CARD 16）成比例，不能和小按钮同值。
     fn radius(self) -> f32 {
         match self {
             Size::Small => 8.0,
@@ -155,6 +164,19 @@ fn style_for(
                 radius,
             },
             shadow: pal.shadow_ctl,
+            snap: true,
+        },
+        Variant::Accent => button::Style {
+            // 底色只在 surface 之间插值（中性），accent 只出现在描边和文字上
+            // ——§7.5 第 15 条：带色相的半透明叠色在物理混色下会被放大。
+            background: Some(theme::lerp(pal.surface_1, pal.surface_2, t).into()),
+            text_color: theme::lerp(pal.accent, pal.accent_hi, t),
+            border: Border {
+                color: theme::lerp(pal.accent_line, pal.accent, t),
+                width: 0.8,
+                radius,
+            },
+            shadow: Shadow::default(),
             snap: true,
         },
         Variant::Primary => {

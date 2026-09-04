@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""生成「上一代 Tauri（左）× Dshnext（右）」并排对比图到 shots/compare-p4/。
+"""生成「上一代 Tauri（左）× Dshnext（右）」并排对比图到 shots/compare-<代>/。
 
-用法：python tools/make-compare.py [页面名...]   不带参数则六页全出。
-输入：shots/tauri-pages/0N-<name>.png 与 shots/p4-<name>-dark.png
+用法：python tools/make-compare.py [--gen p5] [页面名...]   不带页面名则六页全出。
+输入：shots/tauri-pages/0N-<name>.png 与 shots/<代>-<name>-dark.png
       （后者用 `dshnext --shot --page <name> --theme dark` 现出）
 CJK 标签靠系统 msyh.ttc；面板按高度 760 等比缩放，深色底拼一张。
 """
@@ -11,7 +11,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHOTS = os.path.join(ROOT, "shots")
-OUT = os.path.join(SHOTS, "compare-p4")
 PANEL_H = 760
 LABELBAR = 46
 PAD, GAP = 24, 24
@@ -27,9 +26,10 @@ def scale(im):
     return im.resize((w, PANEL_H), Image.LANCZOS)
 
 
-def compose(name):
+def compose(name, gen):
+    out_dir = os.path.join(SHOTS, "compare-" + gen)
     tauri = Image.open(os.path.join(SHOTS, "tauri-pages", f"{PAGES[name]}-{name}.png")).convert("RGB")
-    dsh = Image.open(os.path.join(SHOTS, "p4-%s-dark.png" % name)).convert("RGB")
+    dsh = Image.open(os.path.join(SHOTS, f"{gen}-{name}-dark.png")).convert("RGB")
     t, d = scale(tauri), scale(dsh)
     W = PAD + t.width + GAP + d.width + PAD
     H = LABELBAR + PANEL_H + PAD
@@ -40,15 +40,20 @@ def compose(name):
     dr.text((PAD + t.width + GAP, 12), "Dshnext（iced 原生）", font=f, fill=(120, 150, 255))
     canvas.paste(t, (PAD, LABELBAR))
     canvas.paste(d, (PAD + t.width + GAP, LABELBAR))
-    os.makedirs(OUT, exist_ok=True)
-    out = os.path.join(OUT, f"{name}.png")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, f"{name}.png")
     canvas.save(out)
     print("wrote", out, canvas.size)
 
 
 if __name__ == "__main__":
-    want = sys.argv[1:] or list(PAGES)
-    for n in want:
+    args = sys.argv[1:]
+    gen = "p5"
+    if "--gen" in args:
+        i = args.index("--gen")
+        gen = args[i + 1]
+        del args[i:i + 2]
+    for n in args or list(PAGES):
         if n not in PAGES:
             print("未知页面", n); continue
-        compose(n)
+        compose(n, gen)

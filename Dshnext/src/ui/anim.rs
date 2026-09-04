@@ -13,6 +13,21 @@ pub type Key = &'static str;
 /// hover 过渡时长，对应 CSS `.14s ease`。
 pub const HOVER_DUR: Duration = Duration::from_millis(140);
 
+/// 切页入场补间的 key。**1 = 刚切过来、0 = 已落定**（方向是反的，故意如此）：
+/// `value()` 缺省返回 0.0，正好等于落定态，于是冷启动和 `--page` 都不必预置初值，
+/// 出图脚本截到的也永远是终态。
+pub const PAGE: Key = "page";
+
+/// 侧边栏选中态交叉淡入的 key。与 `PAGE` 同时起跑、同时结束（同一时长），
+/// 不然会看出「内容先到、指示条后到」。语义同上：1 = 刚切、0 = 落定。
+pub const NAV: Key = "nav.switch";
+
+/// 切页入场时长。再短看不出换了页，再长点导航就觉得拖手。
+pub const PAGE_DUR: Duration = Duration::from_millis(190);
+
+/// 切页时内容上移的距离（逻辑像素）。14px 够看出方向，又不会让文字糊成一片。
+pub const PAGE_SHIFT: f32 = 14.0;
+
 /// 一个值的补间。`update` 里推进（`AnimState::tick`），`view` 里读当前值。
 #[derive(Debug, Clone, Copy)]
 pub struct Tween {
@@ -79,6 +94,14 @@ impl AnimState {
             return;
         }
         self.tweens.insert(key, Tween::between(from, target, dur, now));
+    }
+
+    /// 不看当前值，强制从 `from` 重新起跑。切页入场必须用它：`animate_to` 是从
+    /// 当前值出发的，而上一次入场落定后当前值恰好已是目标值，再调它等于什么都不动。
+    pub fn restart(&mut self, key: Key, from: f32, to: f32, dur: Duration, now: Instant) {
+        self.values.insert(key, from);
+        self.tweens
+            .insert(key, Tween::between(from, to, dur, now));
     }
 
     /// 推进所有补间；返回是否仍在动画中。完成的 tween 落定到目标值并移除。

@@ -33,14 +33,34 @@ macro_rules! rgba {
 }
 
 /// 圆角令牌（px），对应 CSS `--r-card` / `--r-ctl` / `--r-pill`。
+/// `R_HERO` 是本代新增的一档：英雄区比普通卡片高一级，圆角也得跟着走
+/// （一套圆角用到底会让所有盒子看着同等重要）。
 pub const R_CARD: f32 = 16.0;
+pub const R_HERO: f32 = 20.0;
 pub const R_CTL: f32 = 10.0;
 pub const R_PILL: f32 = 999.0;
 
-/// hero 大数字排版（借鉴 orevx：48px / 600）。
-/// 注意：CSS 还有 `letter-spacing: -1.2px`，但 **iced 0.14 的 Text 没有
-/// letter_spacing API**（同 tnum 一类的限制，见 DESIGN.md §12），只能放弃负字距。
-pub const HERO_NUM_SIZE: f32 = 48.0;
+/// 字号阶梯。上一代 CSS 以 14px 为根、用 rem 写，直译过来散出 9/9.5/10/11/11.6/
+/// 12/12.5/13/13.5/13.7 十档——相邻两档差 0.1~0.5px，肉眼分不出层级，只显得乱。
+/// 这里收拢成八档并**只许用这些常量**：改一处大小就是改一层语义，不是调一个数。
+pub const FS_MICRO: f32 = 10.0; // 徽标、meta 小标签、日志时间戳
+pub const FS_TINY: f32 = 11.5; // 辅助说明、路径、小按钮
+pub const FS_SMALL: f32 = 12.5; // 表单标签、卡片副标题、输入框
+pub const FS_BODY: f32 = 13.0; // 正文、列表主行
+pub const FS_TITLE: f32 = 13.5; // 卡片标题、hero 按钮
+pub const FS_LEAD: f32 = 15.0; // 模态标题
+pub const FS_HEAD: f32 = 19.0; // 页标题
+/// hero 大标题。上一代 CSS 是 `48px * .62`（`.hero h1` 的 clamp 折中值），
+/// 直接写成 30 免得读代码的人去推那个乘法。**注意 CSS 还有 `letter-spacing: -1.2px`
+/// 而 iced 0.14 的 Text 没有 letter_spacing API**（同 tnum 一类的限制，
+/// 见 DESIGN.md §12），负字距只能放弃——这也是它看着比上一代略宽的原因。
+pub const FS_HERO: f32 = 30.0;
+
+/// 纵向节奏（px，都在 8 的倍数上）。上一代六个页面一律用 18 把页头和各卡片
+/// 等距排开，于是「页头 → 内容」和「卡片 → 卡片」看着是同一层关系，读不出层级。
+/// 现在分两档：页头之后留 `GAP_SECTION`，同级卡片之间留 `GAP_CARD`。
+pub const GAP_CARD: f32 = 16.0;
+pub const GAP_SECTION: f32 = 24.0;
 
 /// 完整令牌集。阶段 1 只用到一部分（input_bg/warn/surface_3 等是阶段 3 表单页的），
 /// 整套先照抄齐，避免后面逐条回去翻 CSS。
@@ -96,6 +116,9 @@ pub struct Palette {
     /// 卡片浮起：CSS `0 20px 40px -24px`。iced 的 Shadow 没有 spread，
     /// 负 spread 的收缩效果靠调小 blur 找回（40 → 30，阶段 0 验证观感等价）。
     pub shadow_card: Shadow,
+    /// 英雄区：比 `shadow_card` 深一档、扩散更远。**不复用 `shadow_pop`**——
+    /// 那是浮层（模态/下拉）的量，用在常驻内容上会显得整块要脱离页面。
+    pub shadow_hero: Shadow,
     /// 弹层：CSS `0 24px 60px -12px` → blur 48 / dy 18。
     pub shadow_pop: Shadow,
     /// 主按钮：CSS `0 6px 18px -8px accent/.5` → blur 14 / dy 5。
@@ -155,6 +178,11 @@ impl Palette {
             color: rgba!(0x000000, 0.45),
             offset: Vector::new(0.0, 10.0),
             blur_radius: 24.0,
+        },
+        shadow_hero: Shadow {
+            color: rgba!(0x000000, 0.55),
+            offset: Vector::new(0.0, 14.0),
+            blur_radius: 34.0,
         },
         shadow_pop: Shadow {
             color: rgba!(0x000000, 0.70),
@@ -218,6 +246,11 @@ impl Palette {
             color: rgba!(0x181e50, 0.14),
             offset: Vector::new(0.0, 10.0),
             blur_radius: 28.0,
+        },
+        shadow_hero: Shadow {
+            color: rgba!(0x181e50, 0.18),
+            offset: Vector::new(0.0, 14.0),
+            blur_radius: 38.0,
         },
         shadow_pop: Shadow {
             color: rgba!(0x181e50, 0.22),

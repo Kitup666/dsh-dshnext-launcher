@@ -8,7 +8,7 @@
 //!   拿不到键盘焦点。
 //! - 淡入动画复用 §7.1 的补间（key = `"modal"`）。
 
-use crate::theme::{self, Palette};
+use crate::theme::{self, FS_LEAD, FS_SMALL, Palette};
 use crate::ui::anim::AnimState;
 use crate::ui::button::{self, Spec, Variant};
 use crate::ui::widgets;
@@ -153,8 +153,8 @@ pub fn overlay<'a, Message: Clone + 'a + 'static>(
     } = actions;
 
     let mut body = Column::new()
-        .push(txt_bold(title).size(15).color(pal.text))
-        .push(txt(desc).size(12.5).color(pal.text_3))
+        .push(txt_bold(title).size(FS_LEAD).color(pal.text))
+        .push(txt(desc).size(FS_SMALL).color(pal.text_3))
         .spacing(6);
 
     if dialog.needs_input() {

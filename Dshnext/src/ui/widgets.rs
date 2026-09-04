@@ -1,7 +1,10 @@
 //! 页面通用小件：标签、列表行、空状态、忙提示、输入框、复选框、下拉、分段控件。
 //! 逐条对应上一代 `styles.css` 里的 `.tag` / `.list-row` / `.empty` / `.input` …
 
-use crate::theme::{self, Palette, R_CTL, R_PILL};
+use crate::theme::{
+    self, FS_BODY, FS_HEAD, FS_MICRO, FS_SMALL, FS_TINY, GAP_CARD, GAP_SECTION, Palette, R_CTL,
+    R_PILL,
+};
 use crate::ui::anim::AnimState;
 use crate::ui::{FONT_MONO, FONT_SANS, mono, txt, txt_bold};
 use iced::widget::text::IntoFragment;
@@ -43,7 +46,7 @@ pub fn tag<'a, Message: 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let (bg, fg) = tone.colors(pal);
-    container(txt_bold(label).size(10).color(fg))
+    container(txt_bold(label).size(FS_MICRO).color(fg))
         .padding(Padding::from([2, 9]))
         .style(move |_theme: &Theme| container::Style {
             text_color: Some(fg),
@@ -178,7 +181,7 @@ pub fn empty<'a, Message: 'a>(
     text_: impl IntoFragment<'a>,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
-    container(txt(text_).size(13).color(pal.text_3))
+    container(txt(text_).size(FS_BODY).color(pal.text_3))
         .width(Fill)
         .padding(Padding::from([46, 24]))
         .align_x(Alignment::Center)
@@ -193,7 +196,7 @@ pub fn busy<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     row![
         dot(pal.accent),
-        txt(text_).size(12.5).color(pal.text_2),
+        txt(text_).size(FS_SMALL).color(pal.text_2),
     ]
     .spacing(8)
     .align_y(Alignment::Center)
@@ -208,12 +211,12 @@ pub fn field<'a, Message: 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let mut col = column![
-        txt_bold(label).size(12).color(pal.text_2),
+        txt_bold(label).size(FS_SMALL).color(pal.text_2),
         control,
     ]
     .spacing(6);
     if let Some(h) = hint {
-        col = col.push(txt(h).size(11.5).color(pal.text_3));
+        col = col.push(txt(h).size(FS_TINY).color(pal.text_3));
     }
     col.width(Fill).into()
 }
@@ -225,8 +228,8 @@ pub fn kv<'a, Message: 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     row![
-        container(txt(key).size(12).color(pal.text_2)).width(Length::Fixed(96.0)),
-        mono(value).size(12).color(pal.text_3),
+        container(txt(key).size(FS_SMALL).color(pal.text_2)).width(Length::Fixed(96.0)),
+        mono(value).size(FS_SMALL).color(pal.text_3),
     ]
     .spacing(12)
     .into()
@@ -243,7 +246,7 @@ pub fn input<'a, Message: Clone + 'a>(
     text_input(placeholder, value)
         .on_input(on_input)
         .padding(Padding::from([9, 12]))
-        .size(12.5)
+        .size(FS_SMALL)
         .font(if is_mono { FONT_MONO } else { FONT_SANS })
         .style(move |_theme: &Theme, status: text_input::Status| {
             let focused = matches!(status, text_input::Status::Focused { .. });
@@ -281,7 +284,7 @@ pub fn secret_input<'a, Message: Clone + 'a>(
     let mut ti = text_input(placeholder, value)
         .on_input(on_input)
         .padding(Padding::from([9, 12]))
-        .size(12.5)
+        .size(FS_SMALL)
         .font(FONT_MONO)
         .style(move |_theme: &Theme, status: text_input::Status| {
             let focused = matches!(status, text_input::Status::Focused { .. });
@@ -399,7 +402,7 @@ pub fn segmented<'a, Message: Clone + 'a>(
     for (label, on, msg) in items {
         let seg = container(
             txt_bold(label)
-                .size(12)
+                .size(FS_SMALL)
                 .color(if on { pal.text } else { pal.text_2 }),
         )
         .padding(Padding::from([6, 14]))
@@ -444,8 +447,8 @@ pub fn page_head<'a, Message: 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let left = column![
-        txt_bold(title).size(19).color(pal.text),
-        txt(desc).size(13).color(pal.text_3),
+        txt_bold(title).size(FS_HEAD).color(pal.text),
+        txt(desc).size(FS_BODY).color(pal.text_3),
     ]
     .spacing(5);
     let mut r = row![left, space::horizontal()]
@@ -455,6 +458,16 @@ pub fn page_head<'a, Message: 'a>(
         r = r.push(a);
     }
     r.into()
+}
+
+/// 页面骨架：页头之后留大档间距，内容内部同级卡片留小档。
+/// **一个 Column 做不到**（`spacing` 对所有间隙一视同仁），必须嵌一层——上一代
+/// 六个页面全用同一个 18，于是「页头 vs 内容」和「卡片 vs 卡片」看着是同级关系。
+pub fn page_stack<'a, Message: 'a>(
+    head: Element<'a, Message>,
+    body: Column<'a, Message>,
+) -> Column<'a, Message> {
+    column![head, body.spacing(GAP_CARD)].spacing(GAP_SECTION)
 }
 
 /// 提示条（CSS `.strip`）：卡片内的次级操作条。
@@ -524,7 +537,7 @@ pub fn toast_host<'a, Message: 'a>(
                     shadow: Shadow::default(),
                     snap: true,
                 }),
-            txt(t.text.as_str()).size(12.5).color(pal.text),
+            txt(t.text.as_str()).size(FS_SMALL).color(pal.text),
         ]
         .spacing(10)
         .align_y(Alignment::Center);

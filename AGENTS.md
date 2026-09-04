@@ -5,7 +5,7 @@
 ## 项目现状
 
 - `src/` + `src-tauri/`：**第一代，Tauri 2 + React，功能完整可用**，已出 NSIS 安装包（3,071,492 字节）。全流程与插件流程各跑通过一次。**不因 Dshnext 重构而停止维护。**
-- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0～3 已完成**（可行性 / 视觉地基 / 后端接入 / 六页移植）。见 `Dshnext/phase0/REPORT.md` 与 `Dshnext/DESIGN.md`。下一步是阶段 4「收尾」。
+- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0～5 已完成**（可行性 / 视觉地基 / 后端接入 / 六页移植 / 收尾 / 切页动画与排版收口）。见 `Dshnext/phase0/REPORT.md` 与 `Dshnext/DESIGN.md`。剩的活是干净 VM 上复核首帧与零依赖。
 - `Dshnext/phase0/`：探针工程，**保留不删**——它是唯一能快速复现性能数字的地方，每次改动都该重跑 `tools/measure-idle.ps1`。
 
 阶段 0 验过的三样已搬进产品代码：`theme.rs` 令牌、字体加载、`WGPU_BACKEND=dx12` 限定（白省 38 MB）。
@@ -48,6 +48,8 @@
 - `--shot 路径 --after 毫秒` 自截图退出。**`--after` 要给够**：六页都会在开窗时发环境探测（三次 `xx --version`，每次可能几秒），2 秒会截到还没填好的界面，给 4000 稳当
 - **批量出图必须一进程一杀一 sleep**（`taskkill //F //IM dshnext.exe; sleep 1.2` 再启下一个）。紧循环连开 12 个 `--shot` 进程时，上一个窗口没退干净，`PrintWindow` 会抓到**残留窗口**——表现成某页截成了另一页（首页截出设置页）、或截成 min-size 的 1100×702 残片。出完用「选中项图标是 accent 蓝」这个主题无关的信号逐张校验页面身份，别只看尺寸。
 - 出图后交 judge 子代理做视觉验收，不要自己看图。两轮下来六页从 3 fail 到全 pass
+- **judge 只看得到图上有的东西。** 插件页默认停在「已安装」分页，市场行根本没渲染，让它验「市场行按钮样式」只会换回一条 Unverified。要验分页/悬停/展开后的状态，得先加命令行开关把程序开在那个状态上。
+- **judge 抓对齐问题比人靠谱，但结论要自己量一遍再改。** 它报「说明行比标签多缩进 20 物理像素」，量下来确实是 375 vs 405（缩进 24 逻辑像素）——但那 24px 当初是**故意**加的（对齐复选框标签）。真正的毛病是它成了整张卡里唯一不在内容列上的一行，所以改法是删掉缩进、回到内容列，不是微调数值。
 
 ## 性能测量
 
@@ -80,6 +82,10 @@
 20. **`windows_subsystem="windows"`（GUI 子系统）会让 wgpu DX12 首帧慢 ~1.1 s。** 同一份代码只改子系统标志：控制台子系统 136 ms、GUI 子系统 1270 ms（本机 RTX 4060，驱动枚举出 6 个重复适配器）。慢在 `init-closure → 首次 view` 之间的 compositor 建设备，与 LTO/日志/内容复杂度都无关。换 Vulkan(497)/GL(456) 快些但不通用，`Vulkan,DX12` 掩码反而更慢（仍枚举 DX12）。**测首帧必须用产品同款子系统**——阶段 0 探针没设这个属性，那个 145 ms 是控制台数字，误导了一版。
 21. **`iced_test` 的 `&str` 选择器是精确相等（`content == self`），不是子串**；`Selector` 对 `widget::Id` 也有实现（控件设 `.id()` 即可按 id 选）。`click` 要求目标 `visible_bounds` 非空（滚出视口点不到），`find` 不要求。禁用按钮上的文字被点会冒泡到外层 `mouse_area`——空草稿点模态「创建」不触发 `DialogConfirm`，但会产生遮罩的 `CloseDialog`，所以断言要写「没有 DialogConfirm」而不是「没有任何消息」。喂 `Start/Stop` 前必须先 `bridge::init()`（update 里同步取 `bridge::sink()`）。
 22. **「零运行时依赖」要用 `dumpbin /DEPENDENTS` 验，别信「Rust 肯定静态」的直觉。** 默认 MSVC 构建动态依赖 `VCRUNTIME140.dll`（VC++ 运行库）+ 一批 `api-ms-win-crt-*`（UCRT），干净裸机上没有就直接起不来。解法：`.cargo/config.toml` 里 `[build] rustflags = ["-C","target-feature=+crt-static"]`，之后只剩系统 DLL（代价 +0.21 MB）。注意 rustflags 是全局的，`cargo test`/debug 也会静态链（功能无碍，链接稍慢）；临时要动态 CRT 就命令行 `RUSTFLAGS=""` 覆盖。
+23. **没有全局 opacity，淡入只能靠「盖一层背景色面纱」，而面纱必须自己 `with_layer`。** `renderer::Style` 只有 `text_color`；wgpu/tiny-skia 在**同一层内都是先画完所有 quad 再画所有 text**，面纱和内容同层的话文字会盖在面纱上面——底色淡入而文字全程清晰，比不做动画更怪。`with_layer` 走 `push_clip`，新层序号更大，稳定画在内容之后。
+24. **入场位移用 `renderer.with_translation`，不要动 padding/height。** 后者每帧重新布局（设置页六张卡整树重排），前者只影响 draw、布局逐帧复用。也不要用 `Transformation::scale`：会连文字一起缩，cosmic-text 非整数缩放要么每帧重栅格化要么拉伸图集，本来就没 hinting 的中文会更糊。
+25. **要在动画中途截图，光靠 `--shot --after` 不行**——落定态永远是它截到的样子。加了 `--switch-to <页> --switch-at <毫秒>`：开窗后定时切页，`--after` 与它的差就是快门落在过渡的第几毫秒。
+26. **`AnimState::animate_to` 起不了「重播」。** 它从当前值出发，而上一次入场落定后当前值已等于目标值，再调等于什么都不动。切页入场要用 `restart(key, from, to, ...)` 强制从头跑。补间方向刻意写成 **1 = 刚切、0 = 落定**：`value()` 对无记录的 key 返回 0.0，正好是落定态，冷启动和 `--page` 出图都不必预置初值。
 
 ## Dshnext 后端复用
 

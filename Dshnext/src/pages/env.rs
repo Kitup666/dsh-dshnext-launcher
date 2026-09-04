@@ -2,7 +2,7 @@
 
 use crate::app::{Dshnext, Message};
 use crate::pages::home::row_btn;
-use crate::theme::Palette;
+use crate::theme::{FS_BODY, FS_TINY, Palette};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal::Dialog;
@@ -29,14 +29,14 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         pal,
     );
 
-    let mut col = Column::new().push(head).spacing(18);
+    let mut body = Column::new();
 
     if let Some(busy) = &app.busy {
-        col = col.push(card::card(
+        body = body.push(card::card(
             column![
                 widgets::busy(busy.as_str(), pal),
                 txt("安装过程的完整输出会实时写入「控制台」页。")
-                    .size(11.5)
+                    .size(FS_TINY)
                     .color(pal.text_3),
             ]
             .spacing(8),
@@ -44,8 +44,10 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         ));
     }
 
-    col = col.push(detect_card(app, pal)).push(data_dir_card(app, pal));
-    col.into()
+    body = body
+        .push(detect_card(app, pal))
+        .push(data_dir_card(app, pal));
+    widgets::page_stack(head, body).into()
 }
 
 /// 检测结果卡：Node / dsh / pnpm 三行 + 预发布开关。
@@ -65,7 +67,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
     // ---- Node.js ----
     let node_managed = env.is_some_and(|e| e.node_managed);
     let mut node_name = row![
-        txt_bold("Node.js").size(13).color(pal.text),
+        txt_bold("Node.js").size(FS_BODY).color(pal.text),
         widgets::tag(
             env.and_then(|e| e.node_version.clone())
                 .unwrap_or_else(|| "未安装".into()),
@@ -107,7 +109,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
                 app,
                 "env.node.install",
                 if node_ok { "下载托管版" } else { "下载安装" },
-                Variant::Primary,
+                Variant::Accent,
                 (!busy).then_some(Message::InstallNode),
                 pal,
             ));
@@ -128,7 +130,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
                     .as_str(),
                 72
             ))
-            .size(11.5)
+            .size(FS_TINY)
             .color(pal.text_3),
         ]
         .spacing(2),
@@ -140,7 +142,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
     // ---- dsh ----
     list = list.push(widgets::divider(pal));
     let mut dsh_name = row![
-        txt_bold("DeepSeek Harness (dsh)").size(13).color(pal.text),
+        txt_bold("DeepSeek Harness (dsh)").size(FS_BODY).color(pal.text),
         widgets::tag(
             env.and_then(|e| e.dsh_version.clone())
                 .unwrap_or_else(|| "未安装".into()),
@@ -197,7 +199,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
             app,
             "env.dsh.install",
             if dsh_ok { "安装 / 切换" } else { "安装" },
-            Variant::Primary,
+            Variant::Accent,
             (!busy && node_ok).then_some(Message::InstallDsh),
             pal,
         ));
@@ -227,7 +229,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
                     .as_str(),
                 72
             ))
-            .size(11.5)
+            .size(FS_TINY)
             .color(pal.text_3),
         ]
         .spacing(2),
@@ -245,7 +247,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
         )),
         column![
             row![
-                txt_bold("pnpm").size(13).color(pal.text),
+                txt_bold("pnpm").size(FS_BODY).color(pal.text),
                 widgets::tag(
                     env.and_then(|e| e.pnpm_version.clone())
                         .unwrap_or_else(|| "未安装".into()),
@@ -256,7 +258,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
             .spacing(8)
             .align_y(Alignment::Center),
             txt("dsh 的插件命令依赖 pnpm，缺失时插件安装/卸载会失败。")
-                .size(11.5)
+                .size(FS_TINY)
                 .color(pal.text_3),
         ]
         .spacing(2),
@@ -264,7 +266,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
             app,
             "env.pnpm.install",
             if pnpm_ok { "重新安装" } else { "安装" },
-            Variant::Primary,
+            Variant::Accent,
             (!busy && node_ok).then_some(Message::InstallPnpm),
             pal,
         )],

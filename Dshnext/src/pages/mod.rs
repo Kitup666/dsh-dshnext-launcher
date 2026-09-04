@@ -10,9 +10,11 @@ pub mod profiles;
 pub mod settings;
 
 use crate::app::{Dshnext, Message};
-use crate::theme::{self, Palette};
+use crate::theme::{self, FS_BODY, FS_MICRO, FS_TINY, FS_TITLE, Palette};
+use crate::ui::anim;
 use crate::ui::icon;
 use crate::ui::modal;
+use crate::ui::reveal::reveal;
 use crate::ui::widgets;
 use crate::ui::{mono, titlebar, txt, txt_bold};
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, space, stack};
@@ -95,7 +97,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     };
 
     // 控制台页自己撑满高度（内部滚动），其余页面外层滚动。
-    let main_area: Element<'_, Message> = if app.page == Page::Console {
+    let body: Element<'_, Message> = if app.page == Page::Console {
         container(page_body)
             .width(Fill)
             .height(Fill)
@@ -111,6 +113,18 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         .height(Fill)
         .into()
     };
+
+    // 切页入场：内容整体下移 + 背景色面纱淡出（src/ui/reveal.rs）。
+    // 只包主区一个元素——侧边栏和标题栏不动，视线才有锚点；同时也是「一次只动
+    // 1~2 个元素」这条动效纪律。落定后 t=0，reveal 走直通分支，零开销。
+    let main_area: Element<'_, Message> = reveal(
+        body,
+        app.anim.value(anim::PAGE),
+        anim::PAGE_SHIFT,
+        pal.bg_app,
+        // 面纱最深 0.9 而不是 1.0：全遮会让第一帧是纯色块，像闪屏。
+        0.9,
+    );
 
     let inner = column![
         titlebar::titlebar(
@@ -226,8 +240,8 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
                 snap: true,
             }),
         column![
-            txt_bold("DshDesk").size(13.5).color(pal.text),
-            txt("DeepSeek Harness 启动器").size(9.5).color(pal.text_3),
+            txt_bold("DshDesk").size(FS_TITLE).color(pal.text),
+            txt("DeepSeek Harness 启动器").size(FS_MICRO).color(pal.text_3),
         ],
     ]
     .spacing(11)
@@ -247,7 +261,7 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     let foot = column![
         row![
             widgets::dot(dot_color),
-            txt(ready_text).size(11.5).color(pal.text_3),
+            txt(ready_text).size(FS_TINY).color(pal.text_3),
         ]
         .spacing(8)
         .align_y(Alignment::Center),
@@ -298,33 +312,40 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
 }
 
 fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<'a, Message> {
-    let active = app.page == page;
     let key = page.anim_key();
     let t = app.anim.value(key);
 
-    let (bg, border_c, border_w) = if active {
-        (pal.surface_1.into(), pal.card_border, 0.3)
+    // 选中程度 act ∈ [0,1]，切页时新旧两项**同时**插值：旧项 1→0、新项 0→1，
+    // 于是两个胶囊交叉淡入，看着像一块底色滑了过去。整数 0/1 的阶跃会「跳」一下
+    // ——上一代靠 CSS transition 掩掉，这里只能自己插。
+    // `anim::NAV` 是剩余进度（1 = 刚切、0 = 落定），所以新项取 1-nav、旧项取 nav。
+    let nav = app.anim.value(anim::NAV);
+    let act = if app.page == page {
+        1.0 - nav
+    } else if app.prev_page == Some(page) {
+        nav
     } else {
-        (
-            theme::lerp(Color::TRANSPARENT, pal.hover, t).into(),
-            Color::TRANSPARENT,
-            0.0,
-        )
+        0.0
     };
-    let text_c = if active {
-        pal.text
-    } else {
-        theme::lerp(pal.text_2, pal.text, t)
-    };
-    let icon_c = if active {
-        pal.accent
-    } else {
-        theme::lerp(pal.text_3, pal.text_2, t)
-    };
+
+    // 底色/描边按 act 插值。**描边色不能用半透明白往里插**（DESIGN.md §7.5 第 15 条：
+    // 物理混色会把带色相的半透明放大），这里 card_border 本身就是中性白，安全。
+    let bg = theme::lerp(
+        // 未选中时的底是 hover 叠色，选中时是 surface_1。两者都要参与：
+        // 悬停着切页时不插 hover 会先闪回透明。
+        theme::lerp(Color::TRANSPARENT, pal.hover, t),
+        pal.surface_1,
+        act,
+    );
+    let border_c = theme::with_alpha(pal.card_border, pal.card_border.a * act);
+    let border_w = 0.3 * act;
+
+    let text_c = theme::lerp(theme::lerp(pal.text_2, pal.text, t), pal.text, act);
+    let icon_c = theme::lerp(theme::lerp(pal.text_3, pal.text_2, t), pal.accent, act);
 
     let mut inner = row![
         icon::icon::<Message>(page.icon(), 18.0, icon_c),
-        txt(page.label()).size(13).color(text_c),
+        txt(page.label()).size(FS_BODY).color(text_c),
     ]
     .spacing(11)
     .align_y(Alignment::Center);
@@ -346,7 +367,7 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
         .padding(Padding::from([0, 11]))
         .style(move |_theme: &Theme| container::Style {
             text_color: Some(text_c),
-            background: Some(bg),
+            background: Some(bg.into()),
             border: Border {
                 color: border_c,
                 width: border_w,
@@ -365,9 +386,9 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
 
 fn foot_row<'a>(k: &'static str, v: String, pal: &'static Palette) -> Element<'a, Message> {
     row![
-        txt(k).size(11.5).color(pal.text_3),
+        txt(k).size(FS_TINY).color(pal.text_3),
         space::horizontal(),
-        mono(widgets::ellipsize(&v, 16)).size(11.5).color(pal.text_2),
+        mono(widgets::ellipsize(&v, 16)).size(FS_TINY).color(pal.text_2),
     ]
     .width(Fill)
     .into()

@@ -9,6 +9,7 @@ pub mod button;
 pub mod card;
 pub mod icon;
 pub mod modal;
+pub mod reveal;
 pub mod titlebar;
 pub mod widgets;
 
