@@ -2,11 +2,23 @@
 
 DshDesk 的**原生 Rust 重写**（iced + wgpu，无 WebView）。目标：低 CPU/GPU/内存 + 视觉不退步 + 单 exe 零运行时依赖。
 
-**当前状态：阶段 0 可行性验证已完成，五项全部通过，可以进入阶段 1（视觉地基）。**
+**当前状态：阶段 0 可行性验证全部通过；阶段 1「视觉地基」已完成。下一步是阶段 2「后端接入」。**
 
 - 阶段 0 实测报告：[phase0/REPORT.md](phase0/REPORT.md)
+- 阶段 1 出图：`shots/phase1-{dark,light}.png`，并排对比 `shots/compare-{dark,light}.png`（左上一代、右本代）
 - 完整设计：[DESIGN.md](DESIGN.md)
 - 上一代（可用）：`../src-tauri` + `../src`，Tauri 2 + React，已出 NSIS 安装包
+
+## 怎么跑 demo 页（阶段 1 产出）
+
+```bash
+cd Dshnext
+cargo run --release                      # 开窗，鼠标 hover 看过渡，按 T 切主题
+cargo run --release -- --shot out.png --after 2500 --theme dark   # 自截图退出
+cargo run --release -- --autotest --drawlog   # 程序自己触发 hover，出帧日志证明动画结束帧归零
+```
+
+`--drawlog` 每 5s 打印真实绘制次数（独立线程数帧，不走 Message）。空闲时 delta=0；hover 一次补间约十几帧后归零。
 
 ## 阶段 0 实测结果
 
@@ -29,10 +41,13 @@ DshDesk 的**原生 Rust 重写**（iced + wgpu，无 WebView）。目标：低 
 
 ```
 phase0/      阶段 0 探针工程 + 实测报告 + 四个测量脚本（保留，用于性能回归）
-src/core/    从上一代复制的后端（1163 行，逻辑不改，只切断 Tauri 耦合）
-src/pages/   六个页面（待写）
-src/ui/      通用组件（待写）
-assets/      图标（已复制）、内嵌字体（4.34 MB，阶段 0 已生成）
+src/main.rs  入口：DX12 限定 + 字体加载 + --shot/--autotest/--drawlog
+src/app.rs   顶层 State/Message/update/view/subscription（阶段 1 = demo 页）
+src/theme.rs 两套设计令牌（照抄上一代 styles.css）
+src/ui/      通用组件：anim/card/button/icon（阶段 1 已建）
+src/core/    从上一代复制的后端（1163 行，逻辑不改，只切断 Tauri 耦合；阶段 2 接入）
+src/pages/   六个页面（阶段 3）
+assets/      图标（svg 已建 6 个）、内嵌字体（4.34 MB，阶段 0 已生成）
 docs/        旧 commands.rs / Cargo.toml，移植时对照用
 ```
 
@@ -53,6 +68,6 @@ docs/        旧 commands.rs / Cargo.toml，移植时对照用
 
 ## 下一步
 
-DESIGN.md §10 的**阶段 1：视觉地基** —— `theme.rs` 两套令牌、软阴影卡片与四类按钮、过渡动画（关键验证点：动画结束后空闲 CPU 要回到 0）。
+DESIGN.md §10 的**阶段 2：后端接入** —— `core/event.rs`（Emitter → channel 机械替换）、`Subscription::run` 接 channel、环境探测与配置读写打通。
 
-进阶段 1 之前要先把探针里验证过的三样搬进产品代码：`theme.rs` 令牌、字体加载、`WGPU_BACKEND=dx12` 限定（白省 38 MB）。
+阶段 1 已把探针验证过的三样搬进产品代码：`theme.rs` 令牌、字体加载、`WGPU_BACKEND=dx12` 限定（main 开头 set_var，白省 38 MB）。

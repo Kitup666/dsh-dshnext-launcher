@@ -7,6 +7,11 @@ edition = "2024"
 # 中文渲染 / 中文输入法 / 空闲占用 / tiny-skia 软件回退。
 # feature 清单与 DESIGN.md §2 保持一致，否则测不到真实结论。
 
+# 产品 Cargo.toml 在上级目录（Dshnext/）。不声明自己的 workspace 根，
+# cargo 会向上找到 Dshnext 并报「phase0 不是该 workspace 的成员」。
+# 探针必须能独立构建，这里显式自成 workspace。
+[workspace]
+
 [dependencies]
 iced = { version = "0.14", default-features = false, features = [
     "wgpu",

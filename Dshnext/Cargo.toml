@@ -1,0 +1,32 @@
+[package]
+name = "dshnext"
+version = "0.1.0"
+edition = "2024"
+description = "DshDesk — DeepSeek Harness 启动器（原生 Rust 重写，iced 0.14）"
+
+# feature 清单与 DESIGN.md §2 一致，与 phase0 探针保持同一组开关，
+# 否则阶段 0 的性能结论不适用。tokio/reqwest/serde 等后端依赖在阶段 2
+# 接入 core/ 时再加，阶段 1 只画视觉地基，保持编译快。
+[dependencies]
+iced = { version = "0.14", default-features = false, features = [
+    "wgpu",
+    "tiny-skia",
+    "crisp",
+    "advanced-shaping",
+    "advanced",
+    "canvas",
+    "svg",
+    "tokio",
+    "thread-pool",
+] }
+png = "0.17"
+env_logger = "0.11"
+log = "0.4"
+tokio = { version = "1", features = ["time"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
