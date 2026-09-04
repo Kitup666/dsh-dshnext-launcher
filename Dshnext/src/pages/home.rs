@@ -12,7 +12,7 @@ use iced::{Alignment, Border, Element, Fill, Length, Padding, Theme};
 pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let pal = app.palette();
     column![hero(app, pal), instances(app, pal)]
-        .spacing(18)
+        .spacing(16)
         .into()
 }
 
@@ -111,10 +111,10 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
             widgets::divider(pal),
             meta,
         ]
-        .spacing(22),
+        .spacing(24),
     )
     .width(Fill)
-    .padding(Padding::from([30, 34]))
+    .padding(Padding::from([28, 32]))
     .style(move |_theme: &Theme| container::Style {
         text_color: Some(pal.text),
         background: Some(pal.surface_1.into()),

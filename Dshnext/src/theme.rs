@@ -127,13 +127,13 @@ impl Palette {
 
         text: rgb!(0xf2f2f4),
         text_2: rgb!(0x9a9ca6),
-        text_3: rgb!(0x5c5e68),
+        text_3: rgb!(0x82848f),
 
-        accent: rgb!(0x5b76ff),
-        accent_hi: rgb!(0x7d92ff),
-        accent_soft: rgba!(0x5b76ff, 0.14),
+        accent: rgb!(0x4a63e0),
+        accent_hi: rgb!(0x4f68e8),
+        accent_soft: rgba!(0x4a63e0, 0.14),
         row_selected: rgb!(0x20222e),
-        accent_line: rgba!(0x5b76ff, 0.40),
+        accent_line: rgba!(0x4a63e0, 0.40),
         on_accent: Color::WHITE,
 
         teal: rgb!(0x2fd6b3),
@@ -162,7 +162,7 @@ impl Palette {
             blur_radius: 48.0,
         },
         shadow_btn: Shadow {
-            color: rgba!(0x5b76ff, 0.50),
+            color: rgba!(0x4a63e0, 0.50),
             offset: Vector::new(0.0, 5.0),
             blur_radius: 14.0,
         },
@@ -192,10 +192,10 @@ impl Palette {
 
         text: rgb!(0x191b2e),
         text_2: rgb!(0x565b78),
-        text_3: rgb!(0x8b90ab),
+        text_3: rgb!(0x6b7091),
 
         accent: rgb!(0x5160ea),
-        accent_hi: rgb!(0x6a77f2),
+        accent_hi: rgb!(0x5262dd),
         accent_soft: rgba!(0x5160ea, 0.10),
         row_selected: rgb!(0xeef0fb),
         accent_line: rgba!(0x5160ea, 0.35),

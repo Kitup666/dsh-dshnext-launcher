@@ -7,14 +7,14 @@ use iced::widget::text::IntoFragment;
 use iced::widget::{Column, container};
 use iced::{Border, Element, Fill, Padding, Theme};
 
-/// 标准卡片容器：padding 24/26，圆角 16，shadow_card。
+/// 标准卡片容器：padding 24，圆角 16，shadow_card。
 pub fn card<'a, Message: 'a>(
     content: impl Into<Element<'a, Message>>,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     container(content)
         .width(Fill)
-        .padding(Padding::from([24, 26]))
+        .padding(Padding::from(24))
         .style(card_style(pal))
         .into()
 }
