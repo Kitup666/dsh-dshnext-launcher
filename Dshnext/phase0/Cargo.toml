@@ -1,0 +1,32 @@
+[package]
+name = "phase0"
+version = "0.1.0"
+edition = "2024"
+
+# 阶段 0 可行性探针。不是产品代码，只用来回答 DESIGN.md §10 的四个问题：
+# 中文渲染 / 中文输入法 / 空闲占用 / tiny-skia 软件回退。
+# feature 清单与 DESIGN.md §2 保持一致，否则测不到真实结论。
+
+[dependencies]
+iced = { version = "0.14", default-features = false, features = [
+    "wgpu",
+    "tiny-skia",
+    "crisp",
+    "advanced-shaping",
+    "advanced",
+    "canvas",
+    "svg",
+    "tokio",
+    "thread-pool",
+] }
+png = "0.17"
+env_logger = "0.11"
+log = "0.4"
+tokio = { version = "1", features = ["time"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

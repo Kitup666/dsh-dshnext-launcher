@@ -1,0 +1,7 @@
+target/
+tools/_static_*.ttf
+tools/_unicodes.txt
+
+# 17 MB 的变体源字体不入库；build_fonts.py 的注释里有下载地址，
+# 需要重新生成子集时再拉一次。产物（assets/fonts/*.subset.ttf）是入库的。
+tools/NotoSansSC-var.ttf

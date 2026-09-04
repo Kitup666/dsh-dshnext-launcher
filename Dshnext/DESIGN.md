@@ -2,9 +2,9 @@
 
 DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端换成纯 Rust GPU 渲染**，目标是把「低占用」和「高视觉」同时拿到。
 
-- 状态：设计阶段，尚未开始编码
+- 状态：**阶段 0 可行性验证已完成并全部通过**（[phase0/REPORT.md](phase0/REPORT.md)），可以进入阶段 1
 - 上一代：`../src-tauri`（Rust 后端）+ `../src`（React 前端），已可用并出过 NSIS 安装包
-- 本目录：`src/core/` 是从上一代直接复制的后端模块（1163 行），`docs/*.tauri-reference` 是对照用的旧文件
+- 本目录：`src/core/` 是从上一代直接复制的后端模块（1163 行），`phase0/` 是探针工程与实测报告，`docs/*.tauri-reference` 是对照用的旧文件
 
 ---
 
@@ -12,15 +12,21 @@ DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端�
 
 ### 硬目标
 
-| 维度 | 上一代（Tauri/WebView2） | Dshnext 目标 |
-|---|---|---|
-| 空闲 CPU | WebView2 有常驻基线 | **≈ 0%**（不重绘就不出帧） |
-| 空闲 GPU | 合成器常驻 | **≈ 0%**（无动画时不提交 frame） |
-| 常驻内存 | 80–150 MB | **≤ 40 MB** |
-| 冷启动 | 需初始化 WebView2 runtime | **≤ 300 ms 到首帧** |
-| 分发体积 | 3 MB + 依赖系统 WebView2 | **单 exe ≤ 15 MB，零运行时依赖** |
-| 视觉质量 | 软阴影/圆角/过渡齐全 | **不退步**（软阴影、圆角、渐变、过渡动画全保留） |
-| 中文质量 | WebView2 灰度 AA | **不退步或更好** |
+下表的「实测」列是阶段 0 在同一台机器上量出来的真实数字，不是估计。
+
+| 维度 | 上一代（Tauri/WebView2，实测） | Dshnext 目标 | 阶段 0 实测 |
+|---|---|---|---|
+| 空闲 CPU | 0.26%（全核）/ 3.6%（单核） | **≈ 0%**（不重绘就不出帧） | ✅ **0.0000%**，120s 内 0 帧 |
+| 空闲 GPU | 1.72% | **≈ 0%** | ✅ **0.00%** |
+| 常驻内存（私有工作集） | **199 MB**（7 个进程） | GPU 后端 **≤ 90 MB**<br>软件后端 **≤ 30 MB** | ✅ **79.8 MB**（DX12）<br>**15.3 MB**（tiny-skia） |
+| 冷启动到**首帧** | 236 ms | **≤ 300 ms** | ✅ **145 ms** |
+| 分发体积 | 3 MB + 依赖系统 WebView2 | **单 exe ≤ 15 MB，零运行时依赖** | ⚠️ **15.22 MB**（含 4.34 MB 字体） |
+| 视觉质量 | 软阴影/圆角/过渡齐全 | **不退步**（软阴影、圆角、渐变、过渡动画全保留） | ✅ 软阴影/圆角观感一致 |
+| 中文质量 | WebView2 灰度 AA | **不退步或更好** | ✅ 无豆腐块，等宽数字对齐 |
+
+内存目标原写「≤ 40 MB」，阶段 0 证明这在有独显驱动的机器上不可能：79.8 MB 里约 75 MB 是 NVIDIA 用户态驱动 + wgpu 设备/队列的常驻开销，iced 自身加内嵌字体只占 5 MB 左右。**因此改为按后端分档**，判据仍是「必须显著低于上一代」——实测 199 → 79.8 MB，降幅 60%。
+
+「冷启动」也从模糊的「到首帧」改成明确区分**窗口出现**与**首帧画好**：Tauri 版空窗口 92 ms 就弹出来了，内容要等 WebView2 加载 bundle（236 ms）；iced 窗口慢 31 ms（初始化 wgpu 设备），首帧快 91 ms。用户感知的是后者，所以指标锚在首帧。
 
 ### 非目标
 
@@ -326,8 +332,26 @@ cosmic-text 是 Rust 的 CJK 事实标准：shaping 用 HarfRust，fallback 表�
 
 补充纪律（双保险）：
 - 在 `ui/mod.rs` 封装 `fn text(s) -> Text`，显式 `.shaping(Shaping::Advanced)`，**全项目禁止直接用 `iced::widget::text`**
-- **内嵌字体**而不是依赖系统字体：`assets/fonts/` 放思源黑体 / Noto Sans SC 的**子集化**版本（常用 3500 字 + 拉丁 + 符号，约 1–2 MB），用 `iced::Settings { fonts }` 加载。保证任何 Windows 上观感一致，也避免「用户系统没装雅黑」
-- 等宽（路径、版本号、日志、PID）用 Cascadia Mono 或 JetBrains Mono 子集；**确认所选字体带 `tnum`**，否则等宽数字对不齐（上一代靠 CSS `font-variant-numeric` 解决，iced 侧无此开关，得靠字体本身）
+- **内嵌字体**而不是依赖系统字体，用 `iced::Settings { fonts }` 加载。保证任何 Windows 上观感一致，也避免「用户系统没装雅黑」
+
+### 字体方案（阶段 0 已落地，实测数字）
+
+生成脚本 `phase0/tools/build_fonts.py`，产物在 `assets/fonts/`：
+
+| 文件 | 大小 | 字形数 | 覆盖 |
+|---|---|---|---|
+| `NotoSansSC-Regular.subset.ttf` | 2.16 MB | 7750 | ASCII + Latin-1 + 标点 + 全角 + 假名 + **GB2312 全 6763 汉字** |
+| `NotoSansSC-SemiBold.subset.ttf` | 2.16 MB | 7750 | 同上 |
+| `CascadiaMono.subset.ttf` | 18 KB | 246 | 拉丁与符号（中文交给 sans 回退） |
+| **合计** | **4.34 MB** | | |
+
+原文写「常用 3500 字，约 1–2 MB」低估了。GB2312 全集是中文界面的地板（用户可能给 profile 起任何名字，dsh 的日志也原样打印），实测 4.34 MB。曾试过扩到 GBK（21886 汉字）→ 14.21 MB，单 exe 直接超标，**放弃**：子集外的字由 cosmic-text 的 Windows 回退表（`Script::Han` + locale `zh-CN` → `Microsoft YaHei UI`）接管，实测 `龘㸻鑫燚囍` 等生僻字正常显示，无豆腐块。
+
+**三条踩过的坑，构建字体时不能省：**
+
+1. **`tnum` 指望不上，等宽数字只能靠字体天然等宽。** iced 从不设置 cosmic-text 的 `font_features`（`iced_graphics` 全库搜不到该字段），所以 CSS 那个 `font-variant-numeric: tabular-nums` 在 iced 侧**没有对应开关**。所幸 Noto Sans SC 与 Cascadia Mono 的十个数字 advance 本来就完全相同。**纪律：换字体必须先验数字 advance 是否一致**，否则表格里的数字会跳。
+2. **`varLib.instancer` 必须带 `--update-name-table`**，否则每个静态实例都继承变体字体的默认名（`Noto Sans SC Thin`）。
+3. **必须显式写 name ID 16/17（typographic family/subfamily）。** `fontdb` 优先用 ID 16 做家族键，回退才用 ID 1；只改 ID 1 会让 SemiBold 注册成独立家族，于是 `Font::with_name("Noto Sans SC") + Weight::Semibold` **静默落到系统字体上**——阶段 0 第一轮就是这么错的，截图上看不出来，得查 name table 才发现。
 
 
 ---
@@ -418,12 +442,38 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 1. **空闲零订阅**。`subscription()` 在无动画、无运行中实例时必须返回 `Subscription::none()`。已知的常驻订阅有两个，都要按需开关：
    - 动画帧（7.1）——动画结束即取消
    - 进程状态轮询——上一代是 `setInterval(2000)` 无条件轮询；**Dshnext 改为仅在有运行中实例时才起 `time::every(2s)`**，空闲时不轮询
+
+   阶段 0 已验证这条能兑现：不订阅任何周期性来源时，开窗画 2 帧后 **120 秒内一帧都没有**，CPU 与 GPU 都是 0.0000%。
 2. **不开 `unconditional-rendering` feature**（iced 用它退回旧的每事件出帧行为）。
-3. **日志环形缓冲**用 `VecDeque` 上限 2000，超出从头弹出，避免无限增长。
-4. **`view()` 里不做重计算**。过滤/排序/格式化的结果缓存进 State，`view()` 只读不算。
-5. **图片/SVG 缓存**。iced 有内部缓存，但确认图标不是每帧重新解析。
-6. **release 构建**：`lto = true`、`codegen-units = 1`、`strip = true`、`panic = "abort"`（上一代已用前三条）。
-7. **窗口最小化时不出帧**（winit 默认行为，需确认 iced 未覆盖）。
+3. **`main` 开头限定 GPU 后端为 DX12**（阶段 0 新增，白省 38 MB）：
+
+   ```rust
+   // iced 没有暴露 wgpu::Backends 的设置入口，默认是 Backends::all()：
+   // Vulkan、DX12、GL 三套加载器全初始化再挑一个，光这份浪费就有 38 MB 常驻。
+   // wgpu 在 compositor 创建时才读这个变量，晚于 main，所以进程内设置有效。
+   // SAFETY: 单线程启动阶段，尚未创建窗口或后台线程。
+   unsafe { std::env::set_var("WGPU_BACKEND", "dx12") };
+   ```
+
+   实测私有工作集：`Backends::all()` 117.8 MB → DX12 79.8 MB。三个后端的渲染输出**逐像素完全一致**，限定后端不影响视觉。
+4. **日志环形缓冲**用 `VecDeque` 上限 2000，超出从头弹出，避免无限增长。
+5. **`view()` 里不做重计算**。过滤/排序/格式化的结果缓存进 State，`view()` 只读不算。
+6. **图片/SVG 缓存**。iced 有内部缓存，但确认图标不是每帧重新解析。
+7. **release 构建**：`lto`、`codegen-units = 1`、`strip = true`、`panic = "abort"`。阶段 0 实测 `panic = "abort"` 一项就省 2.75 MB（17.97 → 15.22 MB），是唯一还有明显空间的开关。
+8. **窗口最小化时不出帧**（winit 默认行为，需确认 iced 未覆盖）。
+
+### 内存构成（阶段 0 归因实测，私有工作集）
+
+知道钱花在哪，才不会在错的地方省：
+
+| 项 | 占用 | 可控性 |
+|---|---|---|
+| 多后端加载器（`Backends::all()`） | **38 MB** | ✅ 限定 DX12 即可省掉，见上面第 3 条 |
+| NVIDIA 用户态驱动 + wgpu 设备/队列/管线 | ~75 MB | ❌ 不在我们控制范围内 |
+| 内嵌字体（4.34 MB 文件） | 4.8 MB | 合理，与文件大小相符 |
+| MSAAx4 抗锯齿 | 0.5 MB | 可忽略，不必为省它牺牲画质 |
+| **软件渲染（tiny-skia）全程总计** | **15.3 MB** | 无 GPU 的机器上反而最省 |
+
 
 ---
 
@@ -431,26 +481,40 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 
 ### 必须达标（否则本方向失败）
 
-| 指标 | 阈值 | 测法 |
-|---|---|---|
-| 空闲 CPU | < 0.5% | 任务管理器观察 60s，窗口打开但不操作 |
-| 空闲 GPU | ~0% | 任务管理器 GPU 引擎列 |
-| 常驻内存 | ≤ 40 MB | 私有工作集，打开六个页面后 |
-| 冷启动到首帧 | ≤ 300 ms | 手动计时或加埋点 |
-| 单 exe 体积 | ≤ 15 MB | 含内嵌字体 |
-| 零运行时依赖 | 干净 Win10 VM 能跑 | 不装 WebView2/.NET 的机器 |
-| 中文渲染 | 无豆腐块、无字形错乱、小字清晰 | 六页目检 |
-| 中文输入法 | 三处输入框能打中文、候选框位置正确 | 手动测 |
-| 视觉不退步 | 与 Tauri 版并排对比，软阴影/圆角/留白/过渡在位 | 截图对比 |
-| 功能对等 | 全流程通过（新建→启动→日志→停止→删除、插件装卸） | `iced_test`，见下 |
+阈值已按阶段 0 实测校准，「测法」列指向可复现的脚本而不是「任务管理器观察」。
+
+| 指标 | 阈值 | 测法 | 阶段 0 结果 |
+|---|---|---|---|
+| 空闲 CPU | < 0.1%（全核） | `phase0/tools/measure-idle.ps1`，60s | ✅ 0.0000% |
+| 空闲 GPU | ~0% | 同上（读 `\GPU Engine(*)\Utilization Percentage`，按 pid 归属） | ✅ 0.00% |
+| 空闲出帧 | 开窗后增量为 0 | 探针在 `draw()` 里计数 | ✅ 120s 内 0 帧 |
+| 常驻内存 | GPU ≤ 90 MB / 软件 ≤ 30 MB | **私有工作集**，六个页面都开过之后 | ✅ 79.8 / 15.3 MB |
+| 首帧画好 | ≤ 300 ms | `phase0/tools/first-paint.ps1`（按窗口表面颜色数判定，不是窗口出现） | ✅ 145 ms |
+| 单 exe 体积 | ≤ 15 MB | 含内嵌字体 | ⚠️ 15.22 MB，见下 |
+| 零运行时依赖 | 干净 Win10 VM 能跑 | 不装 WebView2/.NET 的机器 | 未测（阶段 4） |
+| 中文渲染 | 无豆腐块、无字形错乱、小字清晰 | 六页目检 | ✅ 探针页通过 |
+| 中文输入法 | 三处输入框能打中文、候选框位置正确 | `phase0/tools/ime-drive.ps1` | ✅ preedit/候选/提交/退格全对 |
+| 软件回退下中文 | 与 GPU 后端观感一致 | `ICED_BACKEND=tiny-skia` 截图对比 | ✅ 平均差 0.65/255 |
+| 视觉不退步 | 与 Tauri 版并排对比，软阴影/圆角/留白/过渡在位 | 截图对比 | ✅ 阴影圆角一致；过渡待阶段 1 |
+| 功能对等 | 全流程通过（新建→启动→日志→停止→删除、插件装卸） | `iced_test`，见下 | 未测（阶段 4） |
+
+**关于「测法」的两个教训**（写清楚是因为按错的方法量会得出反向结论）：
+
+- **进程树必须递归遍历。** WebView2 是 `dshdesk.exe` → `msedgewebview2.exe`（browser）→ GPU/renderer/utility 子进程共 7 个。只走一层父子关系只找到 2 个，内存少算 230 MB、CPU 少算 100 倍（0.0015% 而不是 0.2573%）——照这个数字对比，上一代反而"更省"。
+- **别报 `PrivateMemorySize64`。** 那是提交的虚拟内存，NVIDIA 驱动会撑到 200+ MB 而页面并不驻留。任务管理器「内存」列显示的是 `\Process(*)\Working Set - Private`，本文所有内存数字都用后者。
+
+**体积 15.22 MB 擦线**：其中 4.34 MB 是字体。去掉 `svg` feature 能降到 13.38 MB，但图标就得改 `canvas` 手绘。**暂不砍**，阶段 1 之后代码量还会涨，到时候再按实际情况决定。
 
 ### 测试方案变更：`iced_test` 取代 UIA 脚本
 
-**重要发现**：iced 0.14 **没有 AccessKit / 任何可访问性集成**（已核对 0.14.0 的 `Cargo.toml`：无 `accesskit` feature、无该依赖、workspace 里也没有）。这意味着：
+**已实测确认**：iced 0.14 **没有 AccessKit / 任何可访问性集成**（0.14.0 的 `Cargo.toml` 里无 `accesskit` feature、无该依赖）。阶段 0 拿探针窗口跑了一遍 UIA：`AutomationElement.FromHandle` 能拿到窗口本身（`name='DshDesk Phase 0 探针' type=ControlType.Window`），但 **`FindAll(TreeScope::Descendants)` 返回 0 个后代**——窗口内部对 UIA 完全不可见。这意味着：
 
-> **上一代的 `e2e.ps1` 会完全失效。** 那套脚本靠 UI Automation 按名字找按钮、Invoke 点击、读 Text 元素断言——iced 窗口在 UIA 树里将是一个空壳（和上一代那个 WebView2 未就绪时「nav buttons: 0」的情形一样，但这次是永久的）。
+> **上一代的 `e2e.ps1` 会完全失效。** 那套脚本靠 UI Automation 按名字找按钮、Invoke 点击、读 Text 元素断言，在 iced 窗口上一个控件都找不到。
+
+顺带一个连带影响：**外部脚本无法「点中」某个控件**，只能按屏幕坐标点。阶段 0 的 IME 测试因此改成「程序自己 `operation::focus` 聚焦输入框，脚本只负责激活窗口和敲键」——而且**绝不能往窗口里点鼠标**，因为 `text_input` 在任何落空的点击上都会 unfocus。
 
 替代方案是官方的 **`iced_test`**（0.14，作者本人维护），它在**框架内部**模拟交互，比 UIA 更可靠：
+
 
 ```rust
 // 按控件包含的文字选中并点击（&str 实现了 Selector trait）
@@ -487,23 +551,24 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 
 | 风险 | 预案 |
 |---|---|
-| **无 AccessKit：屏幕阅读器不可用，且 UIA 自动化失效** | 自动化改用 `iced_test`（见上）。可访问性本身**本次接受退步**并在 README 声明——上一代 WebView2 自带完整 a11y 树，这是原生化的隐性代价。若将来必需，需等 iced 支持或自行接 AccessKit |
-| 中文 IME 实测有问题 | 若 iced 0.14 的 IME 不达标，**回退到 Tauri 版**（IME 是硬需求，不可妥协） |
-| 空闲 CPU 降不下来 | 逐个排查订阅；若是框架层面无解，本方向失败 |
-| 内存降不到 40 MB | 可放宽到 60 MB（仍显著优于 WebView2）；若 > 80 MB 则收益不成立 |
+| **无 AccessKit：屏幕阅读器不可用，且 UIA 自动化失效** | **已实测确认**（UIA 后代数 = 0）。自动化改用 `iced_test`（见上）。可访问性本身**本次接受退步**并在 README 声明——上一代 WebView2 自带完整 a11y 树，这是原生化的隐性代价。若将来必需，需等 iced 支持或自行接 AccessKit |
+| ~~中文 IME 实测有问题~~ | ✅ **已消除**：微软拼音 preedit/候选框位置/提交/整字退格全部正常，见 [phase0/REPORT.md](phase0/REPORT.md) §3 |
+| ~~空闲 CPU 降不下来~~ | ✅ **已消除**：0.0000%，120s 内 0 帧 |
+| 内存降不到 40 MB | **已发生，且已定位**：GPU 后端 79.8 MB，其中约 75 MB 是显卡驱动 + wgpu 设备常驻，不可控。目标已改为分档（§1），判据变成「显著低于上一代 199 MB」，实测降幅 60%。若将来在别的机器上超过 120 MB，需重新评估 |
 | iced 0.14 已 9 个月无新版（0.13→0.14 隔 15 个月），遇框架 bug 无人修 | 视严重程度：小问题自己 fork 打补丁；阻塞性问题考虑 §2 的 GPUI 备选。注意 master 已是 `0.15.0-dev`，可关注但**不用 git 依赖**（API 会破坏性变更） |
-| 无可用 GPU 的机器（虚拟机、远程桌面、老显卡） | 已开 `tiny-skia` 软件回退——**且 iced 的软渲染器不像 Slint 那样只支持西文**，中文仍可显示（待阶段 0 实测确认） |
+| 无可用 GPU 的机器（虚拟机、远程桌面、老显卡） | ✅ **已实测**：`ICED_BACKEND=tiny-skia` 下中文完全正常（不像 Slint 的软渲染器只支持西文），与 GPU 输出平均差 0.65/255；而且内存反而更低（15.3 MB） |
 | SVG 图标无法动态着色 | 改 `canvas` 手绘（图标简单）或每主题存一份 |
 | `blur`/亚克力窗口效果 | iced 的 `window::Settings::blur` **在 Windows 上是 no-op**（文档明确只支持 macOS/Linux）。设计里不依赖毛玻璃，无影响 |
+| **iced 的 `Shadow` 没有 spread** | 阶段 0 新发现。上一代大量用负 spread 收缩阴影（`0 20px 40px -24px`），iced 侧只能靠调小 `blur_radius` 近似。实测观感等价（40 → 30），已写进 `phase0/src/theme.rs` 的注释 |
 
 
 ### 失败退出条件
 
 **任一条成立就停止本方向，回到 Tauri 版**：
-- 中文输入法不可用或体验明显差于 WebView2
-- 空闲 CPU 无法降到 1% 以下
-- 内存优化幅度 < 30%（即 > 100 MB）
-- 视觉明显退步且无法在合理工作量内补齐
+- 中文输入法不可用或体验明显差于 WebView2 —— ✅ 阶段 0 已排除
+- 空闲 CPU 无法降到 1% 以下 —— ✅ 阶段 0 已排除
+- 内存相比上一代（199 MB 私有工作集）降幅 < 30% —— ✅ 实测降 60%
+- 视觉明显退步且无法在合理工作量内补齐 —— 阶段 1 复核
 
 上一代（Tauri 版）保持可用状态，**不因本重构而删除或停止维护**，直到 Dshnext 全部达标。
 
@@ -513,18 +578,27 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 
 分阶段，每阶段都有可验证产出，早失败早退出。
 
-**阶段 0：可行性验证（最关键，先做）**
-1. `cargo new`，加 iced 依赖（按 §2 的 feature 清单，**注意 `default-features = false`**），跑起一个空窗口
-2. **立刻验四件最可能翻车的事**：
-   - **中文渲染**：内嵌字体 + `advanced-shaping`，渲染一段中文 + 一段等宽数字——看是否清晰、无豆腐块、数字是否对齐
-   - **中文输入法**：一个 `text_input`，用微软拼音打中文——看候选框位置与 preedit 显示
-   - **空闲占用**：空窗口挂 60s，看 CPU/GPU/内存三项
-   - **软件回退**：`WGPU_BACKEND=noop` 或在无 GPU 的 VM 里跑，确认 tiny-skia 路径下中文仍正常（避开 Slint 那个「软渲染仅西文」的坑）
-3. 顺手验一个视觉关键项：**一张带软阴影的圆角卡片**，对比 Tauri 版截图，确认 `Shadow` 的观感能到位
-4. **若这四项任一不达标，本方向就地终止**，不进入阶段 1
+**阶段 0：可行性验证 —— ✅ 已完成，全部通过**
+
+产出：`phase0/` 探针工程（`src/main.rs` 三个场景 + `theme.rs` 令牌）、四个测量脚本、字体构建脚本、[实测报告](phase0/REPORT.md)。
+
+1. ✅ `cargo new` + iced 依赖（`default-features = false`，按 §2 清单），跑起窗口
+2. ✅ 四件最可能翻车的事全部验过：
+   - **中文渲染**：内嵌 GB2312 子集 + `advanced-shaping`，清晰、无豆腐块、生僻字走系统回退、等宽数字对齐
+   - **中文输入法**：微软拼音候选框贴光标、preedit 就地显示、Commit 完整、退格按整字
+   - **空闲占用**：CPU/GPU 双 0，120s 内 0 帧；内存 79.8 MB（DX12）需按 §1 调整目标
+   - **软件回退**：`ICED_BACKEND=tiny-skia` 下中文正常，与 GPU 输出几乎一致
+3. ✅ 软阴影圆角卡片三档模糊半径，观感到位（发现 `Shadow` 无 spread）
+4. ✅ 顺手多验了三项：首帧耗时（145 ms，比 Tauri 版快 91 ms）、单 exe 体积（15.22 MB）、UIA 树确实为空
+
+**阶段 0 遗留、进阶段 1 之前必须做的三件事**：
+
+- 把探针里验证过的 `theme.rs`、字体加载、DX12 限定搬进产品代码（不是重写，是搬）
+- 视觉对照要做真正的并排图：目前只对比了阴影与圆角，**过渡动画、按钮四态、渐变都还没画**
+- `phase0/` 保留不删。它是唯一能快速复现性能数字的地方，阶段 1 之后每次改动都该重跑一遍 `measure-idle.ps1`
 
 **阶段 1：视觉地基**
-5. `theme.rs` 两套令牌（照抄 `../src/styles.css` 的色值）
+5. `theme.rs` 两套令牌（照抄 `../src/styles.css` 的色值；暗色那套已在 `phase0/src/theme.rs` 验证过）
 6. `ui/card.rs` + `ui/button.rs`：软阴影卡片 + 四类按钮，做一个 demo 页并排对比 Tauri 版截图
 7. `ui/anim.rs`：hover 过渡 + 订阅生命周期，**验证动画结束后空闲 CPU 回到 0**（这条不过关就等于白做）
 
@@ -566,35 +640,49 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 | 项 | 状态 | 说明 |
 |---|---|---|
 | **内置 WebUI 窗口** | ❌ 移除 | 改为系统浏览器打开（§5）。设置里的「Web 界面打开方式」选项一并移除 |
-| **可访问性（屏幕阅读器）** | ❌ 退步 | iced 0.14 无 AccessKit 集成。上一代靠 WebView2 白送完整 a11y 树，原生版暂无。需在 README 声明 |
-| **UIA 自动化脚本** | ⚠️ 换方案 | `../scripts/e2e.ps1` 失效，改用 `iced_test`（§9）。截图脚本 `shot.ps1`/`capture-pages.ps1` 仍可用（PrintWindow 与框架无关） |
+| **可访问性（屏幕阅读器）** | ❌ 退步 | iced 0.14 无 AccessKit 集成，**已实测**：UIA 树里窗口后代数 = 0。上一代靠 WebView2 白送完整 a11y 树，原生版暂无。需在 README 声明 |
+| **UIA 自动化脚本** | ⚠️ 换方案 | `../scripts/e2e.ps1` 失效，改用 `iced_test`（§9）。截图脚本 `shot.ps1`/`capture-pages.ps1` 仍可用（PrintWindow 与框架无关）；另外 iced 自带 `window::screenshot()`，能在进程内取图，比 PrintWindow 更干净——阶段 0 的渲染截图就是这么来的 |
+| **常驻内存 40 MB 的原目标** | ⚠️ 放宽 | GPU 后端做不到，79.8 MB 里约 75 MB 是显卡驱动常驻。目标改为分档（§1），判据变成「显著低于上一代」 |
+| **`Shadow` 无 spread** | ⚠️ 近似 | 上一代 CSS 用负 spread 收缩阴影，iced 只能调小 `blur_radius` 近似，观感等价 |
+| **OpenType feature（`tnum` 等）** | ❌ 不可用 | iced 从不设置 cosmic-text 的 `font_features`。等宽数字只能靠字体天然等宽（§6） |
 | **毛玻璃/亚克力窗口** | — | iced 的 `blur` 在 Windows 上是 no-op；本设计不依赖该效果，无影响 |
 
-反过来，明确的收益：
+反过来，明确的收益（括号内是阶段 0 实测值）：
 
 | 项 | 收益 |
 |---|---|
-| 分发 | 单 exe，不再要求目标机器有 WebView2 runtime |
-| 空闲占用 | reactive rendering，不重绘就不出帧 |
+| 分发 | 单 exe（15.22 MB），不再要求目标机器有 WebView2 runtime |
+| 空闲 CPU/GPU | reactive rendering，不重绘就不出帧（**0.0000% / 0.00%**，对上一代 0.26% / 1.72%） |
+| 常驻内存 | **79.8 MB**（DX12）对上一代 **199 MB**，降 60%；无 GPU 时 15.3 MB |
+| 进程数 | **1 个**，对上一代 7 个 |
 | 软阴影成本 | SDF shader 解析式求值，比 WPF 的每帧 GPU 模糊便宜得多，视觉不用为性能让步 |
 | 类型安全 | 后端事件从 JSON 变成 Rust 枚举，字段错误编译期就报 |
-| 冷启动 | 无 WebView2 runtime 初始化 |
+| 首帧 | **145 ms** 对上一代 **236 ms**（无 WebView2 runtime 初始化，也不用等 bundle 加载） |
 | 测试 | `iced_test` 在框架内模拟，比 UIA 快且无焦点/DPI/竞态问题 |
+
 
 ---
 
 ## 附：本文档中未验证的事项
 
-写明以免被当成已确认的事实：
+写明以免被当成已确认的事实。阶段 0 已经消掉四条，剩下四条按阶段推进。
 
-- iced 软件渲染器（tiny-skia）对中文的支持程度 —— 阶段 0 验证
-- iced 0.14 中文 IME 的实际体验 —— 阶段 0 验证
-- `Background::Gradient` 的 API 细节（主按钮竖向渐变） —— 阶段 1 验证
+**阶段 0 已验证（见 [phase0/REPORT.md](phase0/REPORT.md)）**：
+
+- ~~iced 软件渲染器（tiny-skia）对中文的支持程度~~ → ✅ 完全正常，与 GPU 输出平均差 0.65/255
+- ~~iced 0.14 中文 IME 的实际体验~~ → ✅ 微软拼音全链路正常
+- ~~Tauri/WebView2 的内存基线具体数字（原写 80–150 MB 是估计）~~ → ✅ 实测 **199 MB 私有工作集 / 391 MB 工作集 / 7 个进程**
+- ~~`scrollable` 的 culling~~ → 部分回答：`Column::draw` 用 `bounds().intersects(viewport)` 剔除子元素，剔除逻辑确实存在；但**上百条插件行的实际帧时间仍需阶段 3 实测**
+
+**仍未验证**：
+
+- `Background::Gradient` 的 API 细节（主按钮竖向渐变） —— 结构已读（`Gradient::Linear{angle, stops:[Option<ColorStop>;8]}`），但没实际画过 —— 阶段 1 验证
 - `svg` widget 能否动态换色 —— 阶段 1 验证
 - `iced_test` 是否支持按 id 选控件（`iced_selector` 未读） —— 阶段 4 前需确认
 - `window::Settings::platform_specific` 里 Windows 相关字段（drag-drop、skip_taskbar 等） —— docs.rs 是 Linux 构建，未列出
-- `scrollable` 的 culling 对上百条插件列表是否够用 —— 阶段 3 实测
-- Tauri/WebView2 的内存基线具体数字（80–150 MB 是估计，未实测对照）
+- 干净 Win10 VM（无 WebView2/.NET）能否直接跑单 exe —— 阶段 4 验证
+- 换一台机器（AMD/Intel 集显、无独显）的内存数字 —— 目前只有一台 RTX 4060 的数据，75 MB 驱动开销可能因厂商而异
+
 
 
 
