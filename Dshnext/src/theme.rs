@@ -37,6 +37,11 @@ pub const R_CARD: f32 = 16.0;
 pub const R_CTL: f32 = 10.0;
 pub const R_PILL: f32 = 999.0;
 
+/// hero 大数字排版（借鉴 orevx：48px / 600）。
+/// 注意：CSS 还有 `letter-spacing: -1.2px`，但 **iced 0.14 的 Text 没有
+/// letter_spacing API**（同 tnum 一类的限制，见 DESIGN.md §12），只能放弃负字距。
+pub const HERO_NUM_SIZE: f32 = 48.0;
+
 /// 完整令牌集。阶段 1 只用到一部分（input_bg/warn/surface_3 等是阶段 3 表单页的），
 /// 整套先照抄齐，避免后面逐条回去翻 CSS。
 #[allow(dead_code)]
@@ -53,6 +58,9 @@ pub struct Palette {
     pub border: Color,
     pub border_mid: Color,
     pub border_hi: Color,
+    /// 卡片 1px 描边。暗色靠它勾轮廓（黑底上黑阴影不可见，借鉴 orevx glass-dark）；
+    /// 亮色为 transparent，维持上一代「白卡 + 阴影浮起」的设计。
+    pub card_border: Color,
 
     pub text: Color,
     pub text_2: Color,
@@ -75,6 +83,11 @@ pub struct Palette {
     pub bad: Color,
     pub bad_soft: Color,
 
+    /// 页面顶部环境光渐变（借鉴 orevx：蓝 → 青 → 透明）。
+    /// 亮色为 transparent（无环境光）。
+    pub ambient_top: Color,
+    pub ambient_mid: Color,
+
     /// 卡片浮起：CSS `0 20px 40px -24px`。iced 的 Shadow 没有 spread，
     /// 负 spread 的收缩效果靠调小 blur 找回（40 → 30，阶段 0 验证观感等价）。
     pub shadow_card: Shadow,
@@ -89,18 +102,23 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// 对应 `:root[data-theme="dark"]`：纯黑底 #060607、卡 #0e0e10、强调 #5b76ff。
+    /// 暗色：借鉴 orevx glass-dark 的色阶关系（oklch 值已转 sRGB 硬编码）。
+    /// 与上一代 `#060607` 底相比：背景几乎不变，**surface 提亮一档**
+    /// （#0e0e10→#18181a），卡片靠色阶差 + 1px 白描边浮起而非黑阴影
+    /// ——纯黑底上黑阴影本来就不可见，这是 orevx 好看的第一原因。
+    /// 顶部再加一道蓝→青→透明的环境光渐变（ambient_top/mid）。
     pub const DARK: Self = Self {
-        bg_app: rgb!(0x060607),
-        bg_side: rgb!(0x060607),
-        surface_1: rgb!(0x0e0e10),
-        surface_2: rgb!(0x161619),
-        surface_3: rgb!(0x1d1d21),
+        bg_app: rgb!(0x050606),
+        bg_side: rgb!(0x050606),
+        surface_1: rgb!(0x18181a),
+        surface_2: rgb!(0x232325),
+        surface_3: rgb!(0x262728),
         hover: rgba!(0xffffff, 0.04),
 
-        border: rgba!(0xffffff, 0.06),
-        border_mid: rgba!(0xffffff, 0.10),
-        border_hi: rgba!(0xffffff, 0.18),
+        border: rgba!(0xffffff, 0.09),
+        border_mid: rgba!(0xffffff, 0.13),
+        border_hi: rgba!(0xffffff, 0.20),
+        card_border: rgba!(0xffffff, 0.08),
 
         text: rgb!(0xf2f2f4),
         text_2: rgb!(0x9a9ca6),
@@ -122,10 +140,15 @@ impl Palette {
         bad: rgb!(0xf0616d),
         bad_soft: rgba!(0xf0616d, 0.13),
 
+        // orevx: linear-gradient(#195eb429 0%, #005e500a 50%, transparent 100%)
+        ambient_top: rgba!(0x195eb4, 0.16),
+        ambient_mid: rgba!(0x005e50, 0.04),
+
+        // 暗色阴影弱化：轮廓交给 card_border，阴影只留一点深度感。
         shadow_card: Shadow {
-            color: rgba!(0x000000, 0.80),
-            offset: Vector::new(0.0, 14.0),
-            blur_radius: 30.0,
+            color: rgba!(0x000000, 0.45),
+            offset: Vector::new(0.0, 10.0),
+            blur_radius: 24.0,
         },
         shadow_pop: Shadow {
             color: rgba!(0x000000, 0.70),
@@ -147,6 +170,7 @@ impl Palette {
     };
 
     /// 对应 `:root[data-theme="light"]`：淡紫灰底 #f3f4fa + 白卡浮起。
+    /// 亮色保持上一代设计（阴影浮起、无描边、无环境光），不跟 orevx 改。
     pub const LIGHT: Self = Self {
         bg_app: rgb!(0xf3f4fa),
         bg_side: rgb!(0xf3f4fa),
@@ -158,6 +182,7 @@ impl Palette {
         border: rgba!(0x1e2350, 0.07),
         border_mid: rgba!(0x1e2350, 0.11),
         border_hi: rgba!(0x1e2350, 0.20),
+        card_border: Color::TRANSPARENT,
 
         text: rgb!(0x191b2e),
         text_2: rgb!(0x565b78),
@@ -178,6 +203,9 @@ impl Palette {
         warn_soft: rgba!(0xcf8607, 0.10),
         bad: rgb!(0xdd4257),
         bad_soft: rgba!(0xdd4257, 0.09),
+
+        ambient_top: Color::TRANSPARENT,
+        ambient_mid: Color::TRANSPARENT,
 
         shadow_card: Shadow {
             color: rgba!(0x181e50, 0.14),

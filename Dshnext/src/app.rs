@@ -7,11 +7,11 @@
 //! 页面骨架（侧边栏 232px + 主区）照抄上一代 `.app` 的 grid，
 //! 让对比图落在同一个视觉坐标系里。
 
-use crate::theme::{self, Palette, R_PILL};
+use crate::theme::{self, HERO_NUM_SIZE, Palette, R_PILL};
 use crate::ui::anim::{self, AnimState, HOVER_DUR};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::{card, icon, mono, txt, txt_bold};
-use iced::widget::{Column, Row, column, container, mouse_area, row, scrollable, space};
+use iced::widget::{Column, Row, column, container, mouse_area, row, scrollable, space, stack};
 use iced::{
     Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Subscription, Task, Theme,
     Vector, window,
@@ -191,6 +191,7 @@ impl Dshnext {
 
         let main = column![
             self.page_head(pal),
+            self.card_hero(pal),
             self.card_buttons(pal),
             self.card_shadows(pal),
             self.card_icons(pal),
@@ -199,10 +200,46 @@ impl Dshnext {
         .spacing(18)
         .padding(Padding::from(44).top(34));
 
-        row![self.sidebar(pal), scrollable(main).width(Fill).height(Fill)]
+        // 环境光层固定在顶部（不随内容滚动），卡片在其上滚过——
+        // 对应 orevx 把渐变挂在 html 背景、内容滚过它的效果。
+        let main_area = stack![self.ambient(pal), scrollable(main).width(Fill).height(Fill)]
+            .width(Fill)
+            .height(Fill);
+
+        row![self.sidebar(pal), main_area]
             .width(Fill)
             .height(Fill)
             .into()
+    }
+
+    /// 顶部环境光渐变带：蓝 → 青 → 透明，高 260px。亮色两档都 transparent，等于无。
+    fn ambient(&self, pal: &'static Palette) -> Element<'_, Message> {
+        column![
+            container(space::Space::new())
+                .width(Fill)
+                .height(260.0)
+                .style(ambient_style(pal)),
+            space::vertical(),
+        ]
+        .width(Fill)
+        .height(Fill)
+        .into()
+    }
+
+    /// hero 大数字演示卡（借鉴 orevx 的 48px/600 排版）。
+    fn card_hero(&self, pal: &'static Palette) -> Element<'_, Message> {
+        card::card(
+            Column::new()
+                .push(txt("DEEPSEEK HARNESS").size(10.5).color(pal.text_3))
+                .push(txt_bold("92.717").size(HERO_NUM_SIZE).color(pal.text))
+                .push(
+                    txt("hero 数字排版 48px / 600。CSS 的 −1.2px 负字距 iced 没有对应 API（同 tnum 一类限制）。")
+                        .size(11.5)
+                        .color(pal.text_2),
+                )
+                .spacing(6),
+            pal,
+        )
     }
 
     // ---- 侧边栏：hover 过渡的主战场（CSS .nav-item） ----
@@ -265,12 +302,15 @@ impl Dshnext {
         pal: &'static Palette,
     ) -> Element<'_, Message> {
         let t = self.anim.value(key);
-        let (bg, shadow) = if active {
-            (pal.surface_1.into(), pal.shadow_card)
+        // active：色块 + 1px 描边，无阴影（借鉴 orevx 的导航选中态）；
+        // 非 active：hover 补间叠加色。
+        let (bg, border_c, border_w) = if active {
+            (pal.surface_1.into(), pal.card_border, 1.0)
         } else {
             (
                 theme::lerp(Color::TRANSPARENT, pal.hover, t).into(),
-                Shadow::default(),
+                Color::TRANSPARENT,
+                0.0,
             )
         };
         let text_c = if active {
@@ -299,11 +339,11 @@ impl Dshnext {
             text_color: Some(text_c),
             background: Some(bg),
             border: Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
+                color: border_c,
+                width: border_w,
                 radius: 10.0.into(),
             },
-            shadow,
+            shadow: Shadow::default(),
             snap: true,
         });
 
@@ -618,6 +658,23 @@ fn side_style(pal: &'static Palette) -> impl Fn(&Theme) -> iced::widget::contain
     move |_theme: &Theme| iced::widget::container::Style {
         text_color: Some(pal.text),
         background: Some(pal.bg_side.into()),
+        border: Border::default(),
+        shadow: Shadow::default(),
+        snap: true,
+    }
+}
+
+/// 环境光渐变：自上而下（角度 π），蓝 → 青 → 透明。
+/// 亮色两档都 transparent，整条带子不可见，零成本。
+fn ambient_style(pal: &'static Palette) -> impl Fn(&Theme) -> iced::widget::container::Style + Copy + 'static {
+    move |_theme: &Theme| iced::widget::container::Style {
+        text_color: None,
+        background: Some(iced::Background::Gradient(iced::Gradient::Linear(
+            iced::gradient::Linear::new(std::f32::consts::PI)
+                .add_stop(0.0, pal.ambient_top)
+                .add_stop(0.5, pal.ambient_mid)
+                .add_stop(1.0, Color::TRANSPARENT),
+        ))),
         border: Border::default(),
         shadow: Shadow::default(),
         snap: true,

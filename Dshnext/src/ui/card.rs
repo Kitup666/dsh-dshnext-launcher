@@ -1,11 +1,11 @@
-//! 卡片：无边框，靠软阴影浮起（DESIGN.md §6「去框化」）。
-//! 对应 CSS `.card { background: surface-1; border: none; border-radius: 16px; box-shadow: var(--shadow-card) }`。
+//! 卡片：暗色靠 1px 白描边 + 色阶差浮起（借鉴 orevx glass-dark），
+//! 亮色靠软阴影浮起（上一代设计）。card_border 令牌区分两者。
 
 use crate::theme::{Palette, R_CARD};
 use crate::ui::{txt, txt_bold};
-use iced::widget::{Column, container};
-use iced::{Border, Color, Element, Fill, Padding, Theme};
 use iced::widget::text::IntoFragment;
+use iced::widget::{Column, container};
+use iced::{Border, Element, Fill, Padding, Theme};
 
 /// 标准卡片容器：padding 24/26，圆角 16，shadow_card。
 pub fn card<'a, Message: 'a>(
@@ -40,9 +40,11 @@ pub fn card_style(
     move |_theme: &Theme| container::Style {
         text_color: Some(pal.text),
         background: Some(pal.surface_1.into()),
+        // 暗色：1px 白描边勾轮廓（黑底上黑阴影不可见，借鉴 orevx）；
+        // 亮色：card_border 为 transparent，维持白卡 + 阴影浮起。
         border: Border {
-            color: Color::TRANSPARENT,
-            width: 0.0,
+            color: pal.card_border,
+            width: 1.0,
             radius: R_CARD.into(),
         },
         shadow: pal.shadow_card,

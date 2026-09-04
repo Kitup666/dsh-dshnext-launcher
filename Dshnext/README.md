@@ -2,10 +2,11 @@
 
 DshDesk 的**原生 Rust 重写**（iced + wgpu，无 WebView）。目标：低 CPU/GPU/内存 + 视觉不退步 + 单 exe 零运行时依赖。
 
-**当前状态：阶段 0 可行性验证全部通过；阶段 1「视觉地基」已完成。下一步是阶段 2「后端接入」。**
+**当前状态：阶段 0 可行性验证全部通过；阶段 1「视觉地基」已完成，并做了一轮暗色精修（借鉴 orevx glass-dark）。下一步是阶段 2「后端接入」。**
 
 - 阶段 0 实测报告：[phase0/REPORT.md](phase0/REPORT.md)
-- 阶段 1 出图：`shots/phase1-{dark,light}.png`，并排对比 `shots/compare-{dark,light}.png`（左上一代、右本代）
+- 阶段 1 出图：`shots/phase1-{dark,light}.png`，并排对比 `shots/compare-{dark,light}.png`
+- 暗色精修（阶段 1.5）：`shots/compare-orevx.png`（左 orevx 参考、中旧暗色、右新暗色），设计依据见 [DESIGN.md §6 暗色精修](DESIGN.md)
 - 完整设计：[DESIGN.md](DESIGN.md)
 - 上一代（可用）：`../src-tauri` + `../src`，Tauri 2 + React，已出 NSIS 安装包
 

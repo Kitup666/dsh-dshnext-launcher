@@ -355,6 +355,25 @@ cosmic-text 是 Rust 的 CJK 事实标准：shaping 用 HarfRust，fallback 表�
 2. **`varLib.instancer` 必须带 `--update-name-table`**，否则每个静态实例都继承变体字体的默认名（`Noto Sans SC Thin`）。
 3. **必须显式写 name ID 16/17（typographic family/subfamily）。** `fontdb` 优先用 ID 16 做家族键，回退才用 ID 1；只改 ID 1 会让 SemiBold 注册成独立家族，于是 `Font::with_name("Noto Sans SC") + Weight::Semibold` **静默落到系统字体上**——阶段 0 第一轮就是这么错的，截图上看不出来，得查 name table 才发现。
 
+### 暗色精修（阶段 1.5，借鉴 orevx glass-dark）
+
+用户拿 [orevx.ai/llm-dashboard](https://orevx.ai/llm-dashboard) 当审美参照。扒了它的 CSS 变量体系（Tailwind v4 + oklch，`html.dark.glass-dark`），发现它「好看」的三个原因，逐条落到 `theme.rs` 的暗色令牌上（oklch 已转 sRGB 硬编码）：
+
+| 改动 | 旧值 | 新值 | 依据 |
+|---|---|---|---|
+| surface 色阶 | #0e0e10 / #161619 / #1d1d21 | **#18181a / #232325 / #262728** | orevx 的卡片比背景亮 2.4 倍，我们原来只亮 1.5 倍，浮不起来 |
+| 卡片描边 | 无（靠阴影） | **1px rgba(255,255,255,.08)** | 纯黑底上黑阴影几乎不可见（阶段 0 就撞见过），orevx 改用色阶差 + 白描边勾轮廓 |
+| 卡片阴影 | blur30/alpha.8 | blur24/alpha.45 | 轮廓交给描边后，阴影只留一点深度 |
+| 顶部环境光 | 无 | **linear-gradient(π, #195eb4@16% → #005e50@4% → 透明)，高 260px** | orevx 背景不是死黑，顶部有蓝→青氛围光——「高级感」最大来源 |
+| active 导航 | surface_1 + shadow_card | surface_1 + 1px 描边，无阴影 | 同 orevx 的 `.nav active` |
+| hero 大数字 | 无 | **48px / 600**（`HERO_NUM_SIZE`） | orevx 把数字当主角 |
+
+**抄不了的两条，已验证等价或放弃：**
+- `backdrop-filter: blur(36px)`：iced 的 `window::blur` 在 Windows 是 no-op（§12）。但 orevx 背景近纯色，模糊本来就糊不出东西——**直接画预糊好的渐变带，观感等价**，已实现。
+- `letter-spacing: -1.2px`（hero 数字的负字距）：**iced 0.14 的 `Text` 没有 `letter_spacing` API**（`iced_core/src/widget/text.rs` 全部方法里没有，同 `tnum` 一类限制）。只能放弃负字距，48px/600 单独用已经比原来强很多。
+
+**亮色完全不动**：orevx 没有亮色主题，亮色维持上一代「白卡 + 阴影浮起、无描边、无环境光」的设计（`card_border`/`ambient_*` 在 LIGHT 里都是 transparent，零成本）。对比图见 `shots/compare-orevx.png`（左 orevx、中旧暗色、右新暗色）。
+
 
 ---
 
@@ -654,6 +673,7 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 | **常驻内存 40 MB 的原目标** | ⚠️ 放宽 | GPU 后端做不到，79.8 MB 里约 75 MB 是显卡驱动常驻。目标改为分档（§1），判据变成「显著低于上一代」 |
 | **`Shadow` 无 spread** | ⚠️ 近似 | 上一代 CSS 用负 spread 收缩阴影，iced 只能调小 `blur_radius` 近似，观感等价 |
 | **OpenType feature（`tnum` 等）** | ❌ 不可用 | iced 从不设置 cosmic-text 的 `font_features`。等宽数字只能靠字体天然等宽（§6） |
+| **`letter-spacing`（负字距）** | ❌ 不可用 | iced 0.14 的 `Text` 没有 `letter_spacing` API。CSS 大标题的 −1.2px 负字距抄不了，hero 数字只能用 48px/600（§6 暗色精修） |
 | **毛玻璃/亚克力窗口** | — | iced 的 `blur` 在 Windows 上是 no-op；本设计不依赖该效果，无影响 |
 
 反过来，明确的收益（括号内是阶段 0 实测值）：
