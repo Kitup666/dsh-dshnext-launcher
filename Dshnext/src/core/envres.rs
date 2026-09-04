@@ -1,4 +1,4 @@
-use crate::store::{data_dir, Config};
+use crate::core::store::{data_dir, Config};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::time::Duration;

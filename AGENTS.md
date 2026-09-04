@@ -5,7 +5,7 @@
 ## 项目现状
 
 - `src/` + `src-tauri/`：**第一代，Tauri 2 + React，功能完整可用**，已出 NSIS 安装包（3,071,492 字节）。全流程与插件流程各跑通过一次。**不因 Dshnext 重构而停止维护。**
-- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0（可行性验证，五项通过）与阶段 1（视觉地基）已完成**，另做了阶段 1.5 暗色精修 + 无边框窗口。见 `Dshnext/phase0/REPORT.md` 与 `Dshnext/DESIGN.md`。下一步是阶段 2「后端接入」。
+- `Dshnext/`：原生 Rust 重写（iced 0.14 + wgpu）。**阶段 0（可行性）、阶段 1（视觉地基 + 暗色精修 + 无边框窗口）、阶段 2（后端接入）已完成**。见 `Dshnext/phase0/REPORT.md` 与 `Dshnext/DESIGN.md`。下一步是阶段 3「页面移植」。
 - `Dshnext/phase0/`：探针工程，**保留不删**——它是唯一能快速复现性能数字的地方，每次改动都该重跑 `tools/measure-idle.ps1`。
 
 阶段 0 验过的三样已搬进产品代码：`theme.rs` 令牌、字体加载、`WGPU_BACKEND=dx12` 限定（白省 38 MB）。
@@ -63,6 +63,15 @@
 10. **`mouse_area` 要求 `Message: Clone + 'static`。** 一路传染到所有包了它的组件函数签名。
 11. **`stack!` 里的覆盖层会吃掉下层点击。** `Stack::update` 逆序派发、先到的先 capture。透明热区放最上层是对的，但**热区之间的空隙必须是裸 `Space`，不能包 `mouse_area`**，否则整个内容区点不动。
 12. **无边框窗口（`decorations: false`）连缩放边框一起没了**，八向 `drag_resize` 热区、拖动 `window::drag`、最小化/最大化/关闭全要自己接。细节见 DESIGN.md §7.6。
+13. **`Subscription::run` 的 builder 是裸函数指针 `fn()`，捕获不了任何状态。** channel 不能建好再传进去，只能放全局（`OnceLock` + `Mutex<Option<_>>` 等订阅第一次 `take()`）。同理 `Task::perform` 的 future 要 `'static`，跨 Task 共享的东西（如 `ProcMap`）也得放全局。做法见 `Dshnext/src/bridge.rs`。
+14. **事件流订阅要返回原始类型让调用方自己 `.map()`**（`bridge::events() -> Subscription<CoreEvent>`），否则为了把 `fn(CoreEvent) -> Message` 塞进裸函数指针得 transmute。
+
+## Dshnext 后端复用
+
+1. **`core/` 是从第一代 `src-tauri/src/` 复制的，业务逻辑一行不改。** 改完 `grep -rn tauri src/core` 必须为零。唯一批量改动是模块路径 `crate::xxx` → `crate::core::xxx`。
+2. **`EventSink` 用 unbounded channel 是刻意的。** 日志洪峰时反压会把 dsh 卡在写管道上；上限交给 UI 侧的环形缓冲（`VecDeque` 上限 2000）。
+3. **`core/mod.rs` 顶部有 `#![allow(dead_code)]`。** 阶段 2 只接了四条链路，安装/插件/市场的函数还没调用方，但它们是上一代验证过的逻辑，**别删**。
+4. **验证后端链路用 `--e2e`，不要用鼠标坐标。** 程序自己跑「启动第一个 profile → 8s → 停止」，`RUST_LOG=dshnext=debug` 能看到每个 `CoreEvent` 到达 `update()`。
 
 ## 第一代（Tauri）专有
 

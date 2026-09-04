@@ -8,6 +8,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod bridge;
+mod core;
 mod theme;
 mod ui;
 
@@ -69,8 +71,13 @@ fn main() -> iced::Result {
         });
     }
 
+    // core 事件通道：发送端进全局供后端用，接收端等 subscription 取走。
+    // 必须在 application 之前——view 第一次跑就可能要 sink()。
+    bridge::init();
+
+    let e2e = flag("--e2e");
     let mut application = iced::application(
-        move || Dshnext::new(mode, shot.clone(), autotest),
+        move || Dshnext::new(mode, shot.clone(), autotest, e2e),
         Dshnext::update,
         Dshnext::view,
     )

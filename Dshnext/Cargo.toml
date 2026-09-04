@@ -5,8 +5,7 @@ edition = "2024"
 description = "DshDesk — DeepSeek Harness 启动器（原生 Rust 重写，iced 0.14）"
 
 # feature 清单与 DESIGN.md §2 一致，与 phase0 探针保持同一组开关，
-# 否则阶段 0 的性能结论不适用。tokio/reqwest/serde 等后端依赖在阶段 2
-# 接入 core/ 时再加，阶段 1 只画视觉地基，保持编译快。
+# 否则阶段 0 的性能结论不适用。
 [dependencies]
 iced = { version = "0.14", default-features = false, features = [
     "wgpu",
@@ -22,7 +21,21 @@ iced = { version = "0.14", default-features = false, features = [
 png = "0.17"
 env_logger = "0.11"
 log = "0.4"
-tokio = { version = "1", features = ["time"] }
+
+# ---- 后端（src/core/，版本与上一代 docs/Cargo.toml.tauri-reference 对齐）----
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+    "stream",
+] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tokio = { version = "1", features = ["process", "io-util", "time", "sync", "macros", "rt"] }
+dirs = "5"
+futures-util = "0.3"
+# 替代 tauri-plugin-opener：打开系统浏览器与文件管理器（DESIGN.md §5）
+open = "5"
 
 [profile.release]
 opt-level = 3

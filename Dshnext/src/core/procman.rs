@@ -1,9 +1,9 @@
-use crate::envres::{child_path, dsh_cmd, home_dir};
-use crate::store::Config;
+use crate::core::envres::{child_path, dsh_cmd, home_dir};
+use crate::core::store::Config;
+use crate::core::event::{log, CoreEvent, EventSink, LogStream};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
 
 pub struct ProcMeta {
@@ -54,7 +54,7 @@ pub async fn is_running(map: &ProcMap, profile: &str) -> bool {
 
 /// 启动 `dsh --profile <name> --port <port> --no-open`，转发日志并解析 WebUI 地址
 pub async fn start(
-    app: AppHandle,
+    tx: EventSink,
     map: &ProcMap,
     cfg: &Config,
     profile: &str,
@@ -115,10 +115,10 @@ pub async fn start(
     );
 
     // stdout 转发 + 解析 WebUI 地址
-    let app2 = app.clone();
+    let tx2 = tx.clone();
     let profile2 = profile.to_string();
     if let Some(mut out) = child.stdout.take() {
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             use tokio::io::AsyncBufReadExt;
             let reader = tokio::io::BufReader::new(&mut out);
             let mut lines = reader.lines();
@@ -129,57 +129,48 @@ pub async fn start(
                         .find(|c: char| c.is_whitespace())
                         .unwrap_or(rest.len());
                     let found = rest[..end].to_string();
-                    let _ = app2.emit(
-                        "dsh-url",
-                        serde_json::json!({ "profile": profile2, "url": found }),
-                    );
+                    let _ = tx2.send(CoreEvent::Url {
+                        profile: profile2.clone(),
+                        url: found,
+                    });
                 }
-                let _ = app2.emit(
-                    "dsh-log",
-                    serde_json::json!({ "profile": profile2, "stream": "stdout", "line": line, "ts": now_millis() }),
-                );
+                log(&tx2, &profile2, LogStream::Stdout, line);
             }
         });
     }
     // stderr 转发
-    let app3 = app.clone();
+    let tx3 = tx.clone();
     let profile3 = profile.to_string();
     if let Some(mut err) = child.stderr.take() {
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             use tokio::io::AsyncBufReadExt;
             let reader = tokio::io::BufReader::new(&mut err);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let _ = app3.emit(
-                    "dsh-log",
-                    serde_json::json!({ "profile": profile3, "stream": "stderr", "line": line, "ts": now_millis() }),
-                );
+                log(&tx3, &profile3, LogStream::Stderr, line);
             }
         });
     }
-    // 退出监视：通知前端并关掉该 profile 的 WebUI 窗口
-    let app4 = app.clone();
+    // 退出监视。上一代在这里还要关掉 profile 对应的 WebUI 窗口，Dshnext 改用
+    // 系统浏览器（DESIGN.md §5），浏览器标签由用户自己管，这段逻辑随之删除。
+    let tx4 = tx.clone();
     let profile4 = profile.to_string();
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         let code = match child.wait().await {
             Ok(s) => s.code().unwrap_or(-1),
             Err(_) => -1,
         };
-        use tauri::Manager;
-        if let Some(w) = app4.get_webview_window(&format!("webui-{profile4}")) {
-            let _ = w.close();
-        }
-        let _ = app4.emit(
-            "dsh-exit",
-            serde_json::json!({ "profile": profile4, "code": code }),
-        );
+        let _ = tx4.send(CoreEvent::Exit {
+            profile: profile4,
+            code,
+        });
     });
 
     Ok(url)
 }
 
 /// taskkill 杀整棵进程树
-pub async fn stop(app: AppHandle, map: &ProcMap, profile: &str) -> Result<(), String> {
+pub async fn stop(tx: &EventSink, map: &ProcMap, profile: &str) -> Result<(), String> {
     let meta = map.0.lock().await.remove(profile);
     match meta {
         Some(m) => {
@@ -188,9 +179,11 @@ pub async fn stop(app: AppHandle, map: &ProcMap, profile: &str) -> Result<(), St
             kill.args(["/PID", &pid.to_string(), "/T", "/F"])
                 .creation_flags(0x0800_0000);
             let _ = kill.output().await;
-            let _ = app.emit(
-                "dsh-log",
-                serde_json::json!({ "profile": profile, "stream": "system", "line": format!("已发送停止指令 (PID {pid})"), "ts": now_millis() }),
+            log(
+                tx,
+                profile,
+                LogStream::System,
+                format!("已发送停止指令 (PID {pid})"),
             );
             Ok(())
         }

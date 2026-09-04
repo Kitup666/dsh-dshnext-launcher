@@ -1,4 +1,4 @@
-use crate::envres::profiles_root;
+use crate::core::envres::profiles_root;
 use serde::Serialize;
 use std::path::PathBuf;
 

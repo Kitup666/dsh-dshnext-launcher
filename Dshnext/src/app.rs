@@ -1,12 +1,18 @@
 //! 顶层 State / Message / update / view / subscription。
 //!
-//! 阶段 1 的产出就是这个 demo 页（DESIGN.md §10 步骤 5–7）：四类按钮、
-//! 三档软阴影、svg 动态着色、hover 补间 + 主题切换。它同时是验收工具——
-//! `--shot` 出图与上一代截图并排比，`--drawlog` 证明动画结束后出帧归零。
+//! 阶段 1 的产出是视觉地基（卡片/按钮/过渡/图标），阶段 2 在此之上把后端接进来：
+//! `core/` 的异步函数经 `bridge` 变成 `Task`，事件流经 `Subscription` 进 `update`。
+//! 当前页面是「环境」页的最小可用版——真实读配置、真实探测 node/dsh/pnpm、
+//! 真实列 profile，进度与日志走 CoreEvent。
 //!
-//! 页面骨架（侧边栏 232px + 主区）照抄上一代 `.app` 的 grid，
-//! 让对比图落在同一个视觉坐标系里。
+//! 页面骨架（侧边栏 232px + 主区）照抄上一代 `.app` 的 grid。
 
+use crate::bridge;
+use crate::core::envres::EnvStatus;
+use crate::core::event::{CoreEvent, LogStream};
+use crate::core::procman::ProcStatus;
+use crate::core::profiles::ProfileInfo;
+use crate::core::store::Config;
 use crate::theme::{self, HERO_NUM_SIZE, Palette, R_PILL};
 use crate::ui::anim::{self, AnimState, HOVER_DUR};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
@@ -17,12 +23,16 @@ use iced::{
     Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Subscription, Task, Theme,
     Vector, window,
 };
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// 真实绘制次数（阶段 0 的测法：自定义 widget 在 draw() 里自增，不走 Message，
 /// 否则「订阅出帧」会自己触发下一帧，测出来的空闲是假的）。
 pub static DRAWS: AtomicU64 = AtomicU64::new(0);
+
+/// 日志环形缓冲上限（DESIGN.md §8 第 4 条）。
+const LOG_CAP: usize = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -37,6 +47,16 @@ pub struct Shot {
     pub after: u64,
 }
 
+/// 一条日志。`ts` 是毫秒时间戳，展示时只取时分秒。
+pub struct LogLine {
+    /// 归属的 profile（或 EnvProgress 的 task 名）。阶段 3 的控制台页要按它过滤。
+    #[allow(dead_code)]
+    pub profile: String,
+    pub stream: LogStream,
+    pub line: String,
+    pub ts: i64,
+}
+
 pub struct Dshnext {
     pub mode: Mode,
     pub anim: AnimState,
@@ -49,6 +69,20 @@ pub struct Dshnext {
     pub autotest: bool,
     /// 最大化状态。无边框后系统不再管这个，标题栏按钮字形要跟着变。
     pub maximized: bool,
+    /// `--e2e`：开窗后自动跑一遍「启动第一个 profile → 等 8s → 停止」，
+    /// 用日志证明后端链路（spawn / stdout 转发 / URL 解析 / taskkill）真的通。
+    pub e2e: bool,
+
+    // ---- 阶段 2：真实后端状态 ----
+    pub config: Config,
+    pub env: Option<EnvStatus>,
+    pub profiles: Vec<ProfileInfo>,
+    pub procs: Vec<ProcStatus>,
+    pub logs: VecDeque<LogLine>,
+    /// 全局忙提示（正在探测/安装/启动…）。非 None 时相关按钮禁用。
+    pub busy: Option<String>,
+    /// 最近一次错误，显示在页面上。
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,10 +107,39 @@ pub enum Message {
     Close,
     /// 边缘热区：开始缩放。
     Resize(window::Direction),
+
+    // ---- 阶段 2：后端链路 ----
+    /// 后端事件流（进度/日志/URL/退出）。
+    Core(CoreEvent),
+    /// 重新探测环境（node/pnpm/dsh 版本）。
+    RefreshEnv,
+    EnvLoaded(EnvStatus),
+    /// 重新扫 profile 列表。
+    RefreshProfiles,
+    ProfilesLoaded(Result<Vec<ProfileInfo>, String>),
+    /// 有实例在跑时才起的 2s 轮询（DESIGN.md §8 第 1 条）。
+    PollProcs,
+    ProcsLoaded(Vec<ProcStatus>),
+    /// 打开数据目录 / WebUI 地址。
+    OpenPath(String),
+    /// 启动某个 profile 的 `dsh web`。
+    Start(String),
+    /// 启动结果：(profile, url) 或错误。
+    Started(Result<(String, String), String>),
+    /// 停止某个 profile（taskkill 整棵进程树）。
+    Stop(String),
+    Stopped(Result<String, String>),
+    /// 后端操作失败。
+    Failed(String),
+    /// `--e2e` 的第二拍：启动成功若干秒后自动停止，验证完整链路。
+    E2eStop,
 }
 
 impl Dshnext {
-    pub fn new(mode: Mode, shot: Option<Shot>, autotest: bool) -> Self {
+    pub fn new(mode: Mode, shot: Option<Shot>, autotest: bool, e2e: bool) -> Self {
+        // 配置是同步读的（一个小 JSON 文件），不值得为它开 Task。
+        let config = crate::core::store::load();
+        // 主题跟随 config（与上一代 config.json 完全兼容），命令行 --theme 优先。
         Self {
             mode,
             anim: AnimState::default(),
@@ -85,6 +148,14 @@ impl Dshnext {
             last_action: "（还没有）",
             autotest,
             maximized: false,
+            e2e,
+            config,
+            env: None,
+            profiles: Vec::new(),
+            procs: Vec::new(),
+            logs: VecDeque::new(),
+            busy: None,
+            error: None,
         }
     }
 
@@ -95,11 +166,27 @@ impl Dshnext {
         }
     }
 
+    /// 追加一条日志，超上限从头弹出（DESIGN.md §8 第 4 条）。
+    fn push_log(&mut self, profile: String, stream: LogStream, line: String, ts: i64) {
+        if self.logs.len() >= LOG_CAP {
+            self.logs.pop_front();
+        }
+        self.logs.push_back(LogLine {
+            profile,
+            stream,
+            line,
+            ts,
+        });
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Opened(id) => {
                 self.window = Some(id);
                 let mut tasks = Vec::new();
+                // 开窗即打通两条最简链路：环境探测 + profile 列表（DESIGN.md §10 步骤 10）。
+                tasks.push(Task::done(Message::RefreshEnv));
+                tasks.push(Task::done(Message::RefreshProfiles));
                 if let Some(s) = &self.shot {
                     let after = s.after;
                     tasks.push(Task::perform(
@@ -166,7 +253,19 @@ impl Dshnext {
                     Mode::Dark => Mode::Light,
                     Mode::Light => Mode::Dark,
                 };
-                Task::none()
+                // 主题存进 config.json（与上一代同一个文件、同一个字段）。
+                self.config.theme = match self.mode {
+                    Mode::Dark => "dark".into(),
+                    Mode::Light => "light".into(),
+                };
+                let cfg = self.config.clone();
+                Task::perform(
+                    async move { crate::core::store::save(&cfg) },
+                    |r| match r {
+                        Ok(()) => Message::Pressed("主题已保存"),
+                        Err(e) => Message::Failed(format!("保存配置失败：{e}")),
+                    },
+                )
             }
             Message::Pressed(label) => {
                 log::info!("pressed {label}");
@@ -202,14 +301,202 @@ impl Dshnext {
                 Some(id) => window::drag_resize(id, dir),
                 None => Task::none(),
             },
+
+            // ---- 阶段 2：后端链路 ----
+            Message::Core(event) => {
+                log::debug!("core event: {event:?}");
+                match event {
+                    CoreEvent::EnvProgress { task, line } => {
+                        self.push_log(
+                            task,
+                            LogStream::System,
+                            line,
+                            crate::core::event::now_millis(),
+                        );
+                    }
+                    CoreEvent::Log {
+                        profile,
+                        stream,
+                        line,
+                        ts,
+                    } => self.push_log(profile, stream, line, ts),
+                    CoreEvent::Url { profile, url } => {
+                        self.push_log(
+                            profile,
+                            LogStream::System,
+                            format!("WebUI 地址：{url}"),
+                            crate::core::event::now_millis(),
+                        );
+                    }
+                    CoreEvent::Exit { profile, code } => {
+                        self.push_log(
+                            profile.clone(),
+                            LogStream::System,
+                            format!("进程退出，退出码 {code}"),
+                            crate::core::event::now_millis(),
+                        );
+                        self.procs.retain(|p| p.profile != profile);
+                    }
+                }
+                Task::none()
+            }
+            Message::RefreshEnv => {
+                self.busy = Some("正在探测环境…".into());
+                let cfg = self.config.clone();
+                // envres::status 会跑三次 `xx --version`，每次最多 20s 超时，
+                // 必须走 Task 异步，不能在 update 里 block_on。
+                Task::perform(
+                    async move { crate::core::envres::status(&cfg).await },
+                    Message::EnvLoaded,
+                )
+            }
+            Message::EnvLoaded(env) => {
+                self.busy = None;
+                self.env = Some(env);
+                Task::none()
+            }
+            Message::RefreshProfiles => Task::perform(
+                // 目录遍历是同步的，扔到阻塞线程池免得卡住事件循环。
+                async move {
+                    tokio::task::spawn_blocking(crate::core::profiles::list)
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                Message::ProfilesLoaded,
+            ),
+            Message::ProfilesLoaded(result) => {
+                match result {
+                    Ok(list) => {
+                        self.profiles = list;
+                        self.error = None;
+                    }
+                    Err(e) => self.error = Some(e),
+                }
+                // e2e 要等 profile 列表到手才知道启动谁；只跑一次。
+                if self.e2e {
+                    self.e2e = false;
+                    if let Some(first) = self.profiles.first().map(|p| p.name.clone()) {
+                        log::info!("e2e: 启动 {first}");
+                        return Task::done(Message::Start(first));
+                    }
+                    log::warn!("e2e: 没有 profile 可启动");
+                }
+                Task::none()
+            }
+            Message::E2eStop => {
+                let names: Vec<String> = self.procs.iter().map(|p| p.profile.clone()).collect();
+                log::info!("e2e: 停止 {names:?}");
+                Task::batch(names.into_iter().map(|n| Task::done(Message::Stop(n))))
+            }
+            Message::PollProcs => {
+                let procs = bridge::procs();
+                Task::perform(
+                    async move { crate::core::procman::status(&procs).await },
+                    Message::ProcsLoaded,
+                )
+            }
+            Message::ProcsLoaded(list) => {
+                self.procs = list;
+                Task::none()
+            }
+            Message::OpenPath(path) => {
+                // 替代 tauri-plugin-opener：目录交给资源管理器，http 交给浏览器。
+                if let Err(e) = open::that_detached(&path) {
+                    self.error = Some(format!("打开失败：{e}"));
+                }
+                Task::none()
+            }
+            Message::Start(profile) => {
+                self.busy = Some(format!("正在启动 {profile}…"));
+                self.error = None;
+                let tx = bridge::sink();
+                let procs = bridge::procs();
+                let cfg = self.config.clone();
+                let port = self.config.port;
+                Task::perform(
+                    async move {
+                        crate::core::procman::start(tx, &procs, &cfg, &profile, port)
+                            .await
+                            .map(|url| (profile, url))
+                    },
+                    Message::Started,
+                )
+            }
+            Message::Started(result) => {
+                self.busy = None;
+                // e2e 标志在 ProfilesLoaded 里已被置 false，这里用 shot.is_none() 之外
+                // 的独立标记会更清楚——但简单起见：只要命令行给了 --e2e 就走自动停止。
+                let was_e2e = std::env::args().any(|a| a == "--e2e");
+                match result {
+                    Ok((profile, url)) => {
+                        self.push_log(
+                            profile,
+                            LogStream::System,
+                            format!("已启动，WebUI {url}"),
+                            crate::core::event::now_millis(),
+                        );
+                        // 起进程后立刻拉一次状态：轮询订阅要靠 procs 非空才挂上。
+                        let mut tasks = vec![Task::done(Message::PollProcs)];
+                        if self.config.auto_open && !was_e2e {
+                            tasks.push(Task::done(Message::OpenPath(url)));
+                        }
+                        if was_e2e {
+                            tasks.push(Task::perform(
+                                async { tokio::time::sleep(Duration::from_secs(8)).await },
+                                |_| Message::E2eStop,
+                            ));
+                        }
+                        Task::batch(tasks)
+                    }
+                    Err(e) => {
+                        self.error = Some(e);
+                        Task::none()
+                    }
+                }
+            }
+            Message::Stop(profile) => {
+                self.busy = Some(format!("正在停止 {profile}…"));
+                let tx = bridge::sink();
+                let procs = bridge::procs();
+                Task::perform(
+                    async move {
+                        crate::core::procman::stop(&tx, &procs, &profile)
+                            .await
+                            .map(|()| profile)
+                    },
+                    Message::Stopped,
+                )
+            }
+            Message::Stopped(result) => {
+                self.busy = None;
+                match result {
+                    Ok(profile) => {
+                        self.procs.retain(|p| p.profile != profile);
+                        Task::done(Message::PollProcs)
+                    }
+                    Err(e) => {
+                        self.error = Some(e);
+                        Task::none()
+                    }
+                }
+            }
+            Message::Failed(e) => {
+                log::warn!("操作失败：{e}");
+                self.busy = None;
+                self.error = Some(e);
+                Task::none()
+            }
         }
     }
 
-    /// 空闲零订阅（DESIGN.md §8 第 1 条）：无动画时不挂 frames()。
-    /// open_events 是一次性的；listen_with 只在按键时产消息，不造帧。
+    /// 空闲零订阅（DESIGN.md §8 第 1 条）：
+    /// - `frames()` 只在动画期间挂
+    /// - 进程轮询只在**有实例在跑**时挂（上一代是无条件 setInterval(2000)）
+    /// - core 事件流是被动的：后端不发东西就不产消息，不造帧
     pub fn subscription(&self) -> Subscription<Message> {
         let mut subs = vec![
             window::open_events().map(Message::Opened),
+            bridge::events().map(Message::Core),
             iced::event::listen_with(|event, _status, _id| {
                 if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event
                 {
@@ -226,6 +513,11 @@ impl Dshnext {
         if self.anim.is_animating() {
             subs.push(window::frames().map(Message::Tick));
         }
+        if !self.procs.is_empty() {
+            subs.push(
+                iced::time::every(Duration::from_secs(2)).map(|_| Message::PollProcs),
+            );
+        }
         Subscription::batch(subs)
     }
 
@@ -234,7 +526,9 @@ impl Dshnext {
 
         let main = column![
             self.page_head(pal),
-            self.card_hero(pal),
+            self.card_env(pal),
+            self.card_profiles(pal),
+            self.card_logs(pal),
             self.card_buttons(pal),
             self.card_shadows(pal),
             self.card_icons(pal),
@@ -308,20 +602,244 @@ impl Dshnext {
         .into()
     }
 
-    /// hero 大数字演示卡（借鉴 orevx 的 48px/600 排版）。
-    fn card_hero(&self, pal: &'static Palette) -> Element<'_, Message> {
-        card::card(
-            Column::new()
-                .push(txt("DEEPSEEK HARNESS").size(10.5).color(pal.text_3))
-                .push(txt_bold("92.717").size(HERO_NUM_SIZE).color(pal.text))
-                .push(
-                    txt("hero 数字排版 48px / 600。CSS 的 −1.2px 负字距 iced 没有对应 API（同 tnum 一类限制）。")
-                        .size(11.5)
-                        .color(pal.text_2),
+    /// 环境卡：真实探测结果（`core::envres::status`）+ hero 数字排版。
+    /// 这是阶段 2「端到端打通」的第一条链路——数字是真的从磁盘和子进程读来的。
+    fn card_env(&self, pal: &'static Palette) -> Element<'_, Message> {
+        let mut col = Column::new()
+            .push(card::card_title("环境 · 真实探测结果"))
+            .push(card::card_sub(
+                "core::envres::status() 跑三次 `xx --version` 探测托管运行时；配置读自 %LOCALAPPDATA%\\DshDesk\\config.json，与上一代同一个文件。",
+                pal,
+            ))
+            .spacing(14);
+
+        col = match &self.env {
+            None => col.push(
+                txt(match &self.busy {
+                    Some(msg) => msg.clone(),
+                    None => "尚未探测".to_string(),
+                })
+                .size(12)
+                .color(pal.text_2),
+            ),
+            Some(env) => {
+                // hero 数字：profile 数量（借鉴 orevx 的 48px/600 排版）
+                let hero = column![
+                    txt("已安装版本").size(10.5).color(pal.text_3),
+                    txt_bold(format!("{}", self.profiles.len()))
+                        .size(HERO_NUM_SIZE)
+                        .color(pal.text),
+                ]
+                .spacing(2);
+
+                let meta = row![
+                    meta_cell("DSH", env.dsh_version.as_deref().unwrap_or("未安装"), pal),
+                    meta_cell("NODE", env.node_version.as_deref().unwrap_or("未安装"), pal),
+                    meta_cell("PNPM", env.pnpm_version.as_deref().unwrap_or("未安装"), pal),
+                    meta_cell(
+                        "托管 NODE",
+                        if env.node_managed { "是" } else { "否（系统 PATH）" },
+                        pal,
+                    ),
+                ]
+                .spacing(30);
+
+                col.push(row![hero, space::horizontal(), meta].align_y(Alignment::End))
+                    .push(kv("数据目录", &env.data_dir, pal))
+                    .push(kv("DSH_HOME", &env.home_dir, pal))
+            }
+        };
+
+        let refresh_disabled = self.busy.is_some();
+        col = col.push(
+            row![
+                mk_btn(
+                    "b.env.refresh",
+                    "重新探测",
+                    Variant::Secondary,
+                    BtnSize::Small,
+                    refresh_disabled,
+                    pal,
+                    &self.anim,
                 )
-                .spacing(6),
-            pal,
-        )
+                .with_press(Message::RefreshEnv),
+                mk_btn(
+                    "b.env.open",
+                    "打开数据目录",
+                    Variant::Secondary,
+                    BtnSize::Small,
+                    self.env.is_none(),
+                    pal,
+                    &self.anim,
+                )
+                .with_press(Message::OpenPath(
+                    self.env
+                        .as_ref()
+                        .map(|e| e.data_dir.clone())
+                        .unwrap_or_default()
+                )),
+            ]
+            .spacing(10),
+        );
+
+        if let Some(err) = &self.error {
+            col = col.push(txt(err.clone()).size(11.5).color(pal.bad));
+        }
+
+        card::card(col, pal)
+    }
+
+    /// 版本（profile）列表：真实扫 `$DSH_HOME/profiles/`。
+    fn card_profiles(&self, pal: &'static Palette) -> Element<'_, Message> {
+        let mut col = Column::new()
+            .push(card::card_title(format!(
+                "版本管理 · {} 个 profile",
+                self.profiles.len()
+            )))
+            .push(card::card_sub(
+                "core::profiles::list() 读每个目录的 package.json，取 dsh.profile.bundles 与 dependencies。",
+                pal,
+            ))
+            .spacing(14);
+
+        if self.profiles.is_empty() {
+            col = col.push(txt("还没有版本。到上一代或用 dsh 新建一个即可。").size(12).color(pal.text_3));
+        } else {
+            for p in &self.profiles {
+                let running = self.procs.iter().find(|s| s.profile == p.name);
+                col = col.push(self.profile_row(p, running, pal));
+            }
+        }
+
+        col = col.push(
+            mk_btn(
+                "b.prof.refresh",
+                "重新扫描",
+                Variant::Secondary,
+                BtnSize::Small,
+                false,
+                pal,
+                &self.anim,
+            )
+            .with_press(Message::RefreshProfiles),
+        );
+
+        card::card(col, pal)
+    }
+
+    /// profile 一行：名字 + 运行状态 + 元信息 + 启动/停止/打开目录。
+    /// 写成方法而不是自由函数，因为按钮要读 `self.anim` 的 hover 补间值。
+    fn profile_row<'a>(
+        &'a self,
+        p: &'a ProfileInfo,
+        running: Option<&'a ProcStatus>,
+        pal: &'static Palette,
+    ) -> Element<'a, Message> {
+        let status: Element<'_, Message> = match running {
+            Some(s) => row![
+                container(space::Space::new())
+                    .width(7.0)
+                    .height(7.0)
+                    .style(dot_style(pal, pal.ok)),
+                txt(format!("运行中 · PID {} · {}s", s.pid, s.uptime_secs))
+                    .size(10.5)
+                    .color(pal.ok),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into(),
+            None => txt("空闲").size(10.5).color(pal.text_3).into(),
+        };
+
+        // hover 补间的 key 必须每行唯一，但 anim::Key 是 &'static str，
+        // profile 名是运行期字符串——用固定前缀 + 索引不可靠（列表会变）。
+        // 折中：这一组按钮不做 hover 过渡（传 None），点击仍然正常。
+        let actions: Element<'_, Message> = match running {
+            Some(s) => row![
+                button::btn(
+                    Spec::new("row.open", "打开界面", Variant::Secondary).size(BtnSize::Small),
+                    pal,
+                    &self.anim,
+                    Some(Message::OpenPath(s.url.clone())),
+                    None,
+                    None,
+                ),
+                button::btn(
+                    Spec::new("row.stop", "停止", Variant::QuietDanger).size(BtnSize::Small),
+                    pal,
+                    &self.anim,
+                    Some(Message::Stop(p.name.clone())),
+                    None,
+                    None,
+                ),
+            ]
+            .spacing(8)
+            .into(),
+            None => row![
+                button::btn(
+                    Spec::new("row.start", "启动", Variant::Primary).size(BtnSize::Small),
+                    pal,
+                    &self.anim,
+                    Some(Message::Start(p.name.clone())),
+                    None,
+                    None,
+                ),
+                button::btn(
+                    Spec::new("row.dir", "打开目录", Variant::Secondary).size(BtnSize::Small),
+                    pal,
+                    &self.anim,
+                    Some(Message::OpenPath(p.path.clone())),
+                    None,
+                    None,
+                ),
+            ]
+            .spacing(8)
+            .into(),
+        };
+
+        row![
+            column![
+                row![txt_bold(p.name.clone()).size(13).color(pal.text), status]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                mono(format!(
+                    "{} 个 bundle · {} 个依赖",
+                    p.bundles.len(),
+                    p.dependencies.len()
+                ))
+                .size(10.5)
+                .color(pal.text_3),
+            ]
+            .spacing(2),
+            space::horizontal(),
+            actions,
+        ]
+        .width(Fill)
+        .align_y(Alignment::Center)
+        .spacing(12)
+        .into()
+    }
+
+    /// 日志卡：CoreEvent 流的落点。空的时候说明还没有后端活动。
+    fn card_logs(&self, pal: &'static Palette) -> Element<'_, Message> {
+        let mut col = Column::new()
+            .push(card::card_title(format!("控制台 · {} 行", self.logs.len())))
+            .push(card::card_sub(
+                "后端事件经 tokio channel → Subscription::run → update()，按 stream 着色。环形缓冲上限 2000 行。",
+                pal,
+            ))
+            .spacing(6);
+
+        if self.logs.is_empty() {
+            col = col.push(txt("（暂无输出）").size(11.5).color(pal.text_3));
+        } else {
+            // 只渲染最后 30 行：整份 2000 行的虚拟滚动是阶段 3 的事（DESIGN.md §7.3）。
+            for l in self.logs.iter().rev().take(30).collect::<Vec<_>>().into_iter().rev() {
+                col = col.push(log_row(l, pal));
+            }
+        }
+
+        card::card(col, pal)
     }
 
     // ---- 侧边栏：hover 过渡的主战场（CSS .nav-item） ----
@@ -350,18 +868,42 @@ impl Dshnext {
             .push(self.nav_item("控制台", "nav.console", icon::CONSOLE, false, pal))
             .push(self.nav_item("设置", "nav.settings", icon::SETTINGS, false, pal));
 
+        // 底部三行改成真实值：环境是否就绪由探测结果决定，不再是写死的文案。
+        let ready = self
+            .env
+            .as_ref()
+            .is_some_and(|e| e.dsh_version.is_some() && e.node_version.is_some());
+        let (dot_color, ready_text) = match &self.env {
+            None => (pal.text_3, "未探测"),
+            Some(_) if ready => (pal.ok, "环境就绪"),
+            Some(_) => (pal.warn, "环境不完整"),
+        };
         let foot = column![
             row![
                 container(space::Space::new())
                     .width(7.0)
                     .height(7.0)
-                    .style(dot_style(pal)),
-                txt("环境就绪").size(10.5).color(pal.text_3),
+                    .style(dot_style(pal, dot_color)),
+                txt(ready_text).size(10.5).color(pal.text_3),
             ]
             .spacing(8)
             .align_y(Alignment::Center),
-            foot_row("dsh", "0.1.1-rc.2", pal),
-            foot_row("Node", "v24.19.0", pal),
+            foot_row(
+                "dsh",
+                self.env
+                    .as_ref()
+                    .and_then(|e| e.dsh_version.clone())
+                    .unwrap_or_else(|| "—".into()),
+                pal
+            ),
+            foot_row(
+                "Node",
+                self.env
+                    .as_ref()
+                    .and_then(|e| e.node_version.clone())
+                    .unwrap_or_else(|| "—".into()),
+                pal
+            ),
         ]
         .spacing(6);
 
@@ -658,13 +1200,58 @@ impl<'a> From<ButtonHandle<'a>> for Element<'a, Message> {
     }
 }
 
-fn foot_row<'a>(k: &'static str, v: &'static str, pal: &'static Palette) -> Element<'a, Message> {
+fn foot_row<'a>(k: &'static str, v: String, pal: &'static Palette) -> Element<'a, Message> {
     row![
         txt(k).size(10.5).color(pal.text_3),
         space::horizontal(),
         mono(v).size(10.5).color(pal.text_2),
     ]
     .width(Fill)
+    .into()
+}
+
+/// meta 信息带的一格（对应上一代 CSS `.meta`）。
+fn meta_cell<'a>(label: &'static str, value: &str, pal: &'static Palette) -> Element<'a, Message> {
+    column![
+        txt(label).size(9.5).color(pal.text_3),
+        mono(value.to_string()).size(12.5).color(pal.text),
+    ]
+    .spacing(3)
+    .into()
+}
+
+/// 键值行（对应上一代 CSS `.kv`）。
+fn kv<'a>(key: &'static str, value: &str, pal: &'static Palette) -> Element<'a, Message> {
+    row![
+        container(txt(key).size(11).color(pal.text_2)).width(Length::Fixed(90.0)),
+        mono(value.to_string()).size(11).color(pal.text_3),
+    ]
+    .spacing(12)
+    .into()
+}
+
+
+/// 日志一行：时间 + 来源着色（对应上一代 `.log-stdout/.log-stderr/...`）。
+fn log_row<'a>(l: &LogLine, pal: &'static Palette) -> Element<'a, Message> {
+    let color = match l.stream {
+        LogStream::Stdout => pal.text,
+        LogStream::Stderr => pal.bad,
+        LogStream::System => pal.accent,
+        LogStream::Plugin => pal.teal,
+    };
+    // 只显示时分秒：日志列很窄，完整时间戳挤掉正文。
+    let secs = (l.ts / 1000) % 86400;
+    let hms = format!(
+        "{:02}:{:02}:{:02}",
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    );
+    row![
+        mono(hms).size(10).color(pal.text_3),
+        mono(l.line.clone()).size(10.5).color(color),
+    ]
+    .spacing(9)
     .into()
 }
 
@@ -722,10 +1309,13 @@ fn brand_style(pal: &'static Palette) -> impl Fn(&Theme) -> iced::widget::contai
     }
 }
 
-fn dot_style(pal: &'static Palette) -> impl Fn(&Theme) -> iced::widget::container::Style + Copy + 'static {
+fn dot_style(
+    _pal: &'static Palette,
+    color: Color,
+) -> impl Fn(&Theme) -> iced::widget::container::Style + Copy + 'static {
     move |_theme: &Theme| iced::widget::container::Style {
         text_color: None,
-        background: Some(pal.ok.into()),
+        background: Some(color.into()),
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,

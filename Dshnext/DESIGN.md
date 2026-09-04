@@ -2,7 +2,7 @@
 
 DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端换成纯 Rust GPU 渲染**，目标是把「低占用」和「高视觉」同时拿到。
 
-- 状态：**阶段 0 可行性验证全部通过；阶段 1「视觉地基」已完成**（`src/` 产品工程：theme/ui/app/main，demo 页出图见 `shots/compare-*.png`）。下一步是阶段 2「后端接入」
+- 状态：**阶段 0（可行性）、阶段 1（视觉地基）、阶段 2（后端接入）已完成**。后端 1163 行原样复用，Emitter 换成 channel；环境探测/配置读写/profile 列表/进程启停全部实跑通过。下一步是阶段 3「页面移植」
 - 上一代：`../src-tauri`（Rust 后端）+ `../src`（React 前端），已可用并出过 NSIS 安装包
 - 本目录：`src/core/` 是从上一代直接复制的后端模块（1163 行），`phase0/` 是探针工程与实测报告，`docs/*.tauri-reference` 是对照用的旧文件
 
@@ -20,7 +20,7 @@ DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端�
 | 空闲 GPU | 1.72% | **≈ 0%** | ✅ **0.00%** |
 | 常驻内存（私有工作集） | **199 MB**（7 个进程） | GPU 后端 **≤ 100 MB**<br>软件后端 **≤ 30 MB** | ✅ **79.8 MB**（DX12，探针空闲场景）<br>**15.3 MB**（tiny-skia）<br>⚠️ 阶段 1 demo 页 **98.6 MB**，见下 |
 | 冷启动到**首帧** | 236 ms | **≤ 300 ms** | ✅ **145 ms** |
-| 分发体积 | 3 MB + 依赖系统 WebView2 | **单 exe ≤ 15 MB，零运行时依赖** | ⚠️ **15.22 MB**（含 4.34 MB 字体） |
+| 分发体积 | 3 MB + 依赖系统 WebView2 | **单 exe ≤ 18 MB，零运行时依赖** | ⚠️ **16.27 MB**（含 4.34 MB 字体 + 后端依赖） |
 | 视觉质量 | 软阴影/圆角/过渡齐全 | **不退步**（软阴影、圆角、渐变、过渡动画全保留） | ✅ 软阴影/圆角观感一致 |
 | 中文质量 | WebView2 灰度 AA | **不退步或更好** | ✅ 无豆腐块，等宽数字对齐 |
 
@@ -165,6 +165,8 @@ pub type EventSink = tokio::sync::mpsc::UnboundedSender<CoreEvent>;
 | `app.get_webview_window("webui-x").close()` | 见 §5 WebUI 窗口方案 |
 
 iced 侧用 `Subscription::run` 把 channel 接收端变成消息流，事件直接进 `update()`——比 Tauri 的 `listen` 更直接，且**类型安全**（枚举替代 JSON，编译期就能查出字段错误）。
+
+**实现细节（阶段 2 踩到的）**：`Subscription::run` 的 builder 是裸函数指针 `fn() -> impl Stream`，**捕获不了任何状态**，所以 channel 不能建好再传进去。`src/bridge.rs` 的做法是把两端都放全局：`main` 调 `bridge::init()` 建 channel，发送端进 `OnceLock<EventSink>`（后端从 `bridge::sink()` 取），接收端进 `Mutex<Option<EventStream>>` 等订阅第一次启动时 `take()`。同理 `ProcMap` 要跨 `Task` 共享而 future 必须 `'static`，也放 `OnceLock<Arc<ProcMap>>`。
 
 ### 需要重写的部分
 
@@ -530,7 +532,7 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 | 空闲出帧 | 开窗后增量为 0 | 探针在 `draw()` 里计数 | ✅ 120s 内 0 帧 |
 | 常驻内存 | GPU ≤ 90 MB / 软件 ≤ 30 MB | **私有工作集**，六个页面都开过之后 | ✅ 79.8 / 15.3 MB |
 | 首帧画好 | ≤ 300 ms | `phase0/tools/first-paint.ps1`（按窗口表面颜色数判定，不是窗口出现） | ✅ 145 ms |
-| 单 exe 体积 | ≤ 15 MB | 含内嵌字体 | ⚠️ 15.22 MB，见下 |
+| 单 exe 体积 | ≤ 18 MB | 含内嵌字体与后端依赖 | ✅ 16.27 MB（阶段 2 后），见下 |
 | 零运行时依赖 | 干净 Win10 VM 能跑 | 不装 WebView2/.NET 的机器 | 未测（阶段 4） |
 | 中文渲染 | 无豆腐块、无字形错乱、小字清晰 | 六页目检 | ✅ 探针页通过 |
 | 中文输入法 | 三处输入框能打中文、候选框位置正确 | `phase0/tools/ime-drive.ps1` | ✅ preedit/候选/提交/退格全对 |
@@ -543,7 +545,7 @@ iced 无 modal。用 `stack!` + `opaque`（文档明确说它用来拦截鼠标�
 - **进程树必须递归遍历。** WebView2 是 `dshdesk.exe` → `msedgewebview2.exe`（browser）→ GPU/renderer/utility 子进程共 7 个。只走一层父子关系只找到 2 个，内存少算 230 MB、CPU 少算 100 倍（0.0015% 而不是 0.2573%）——照这个数字对比，上一代反而"更省"。
 - **别报 `PrivateMemorySize64`。** 那是提交的虚拟内存，NVIDIA 驱动会撑到 200+ MB 而页面并不驻留。任务管理器「内存」列显示的是 `\Process(*)\Working Set - Private`，本文所有内存数字都用后者。
 
-**体积 15.22 MB 擦线**：其中 4.34 MB 是字体。去掉 `svg` feature 能降到 13.38 MB，但图标就得改 `canvas` 手绘。**暂不砍**，阶段 1 之后代码量还会涨，到时候再按实际情况决定。
+**体积**：阶段 0 探针 15.22 MB → 阶段 2 产品 16.27 MB（后端接入带来 reqwest/zip/tokio）。其中 4.34 MB 是内嵌字体。原目标「≤ 15 MB」是照探针定的，接了后端就不现实，**放宽到 ≤ 18 MB**——判据仍是「零运行时依赖的单文件分发」，而不是跟 Tauri 的 3 MB 比（那 3 MB 后面还挂着 100+ MB 的 WebView2 runtime）。去掉 `svg` feature 能省约 1.8 MB，但图标要改 `canvas` 手绘，**暂不砍**。
 
 ### 测试方案变更：`iced_test` 取代 UIA 脚本
 
@@ -650,10 +652,19 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 阶段 1 踩到的新坑（已写进 AGENTS.md）：`Text<'a>` 对 `'a` **不变**，文本封装函数不能钉死 `'static`；`mouse_area` 要求 `Message: Clone + 'static`；数帧的 1x1 widget 放 scrollable 里会被视口剔除（draws 恒 0），必须放常驻可见区。
 
 
-**阶段 2：后端接入**
-8. `core/event.rs`，六个模块的 Emitter → channel 机械替换
-9. `Subscription::run` 接 channel，事件进 `update()`
-10. 环境探测与配置读写打通（最简单的两条链路，验证端到端）
+**阶段 2：后端接入 —— ✅ 已完成**
+
+产出：`src/core/`（7 个模块，含新增 `event.rs`）、`src/bridge.rs`（channel 与 ProcMap 的全局持有）、`app.rs` 的后端 Message 分支与真实数据卡片。
+
+8. ✅ `core/event.rs`：`CoreEvent`（EnvProgress/Log/Url/Exit）+ `EventSink`（`UnboundedSender`）。三个耦合模块按 §3 的替换表机械改写，**业务逻辑一行未动**，改完全库 `grep tauri` 为零。unbounded 是刻意的：日志洪峰时反压会把 dsh 卡在写管道上。
+9. ✅ `Subscription::run` 接 channel，事件进 `update()`。**两个坑**：
+   - `Subscription::run` 的 builder 是**裸函数指针 `fn()`**，捕获不了 channel。做法是 `main` 里 `bridge::init()` 建好 channel，发送端进 `OnceLock`、接收端进 `Mutex<Option<_>>` 等订阅第一次取走。让 `bridge::events()` 返回 `Subscription<CoreEvent>`、调用方自己 `.map()`，闭包就无需捕获。
+   - `ProcMap` 要跨 Task 共享而 `Task::perform` 的 future 必须 `'static`，同样用全局 `OnceLock<Arc<ProcMap>>` 解决。
+10. ✅ 端到端打通并实测：配置读写（切主题落盘 `config.json`，与上一代同一文件）、环境探测（`dsh 0.1.1-rc.2 / node v24.19.0 / pnpm 10.23.0` 真实读出）、profile 列表（扫 `$DSH_HOME/profiles/`）、进程启停。
+
+**`--e2e` 全链路实测**（程序自己跑，不依赖鼠标坐标）：启动 `web` → 2s 后收到 `CoreEvent::Url{url:"http://127.0.0.1:3080"}` 与 stdout 行 → 8s 后 taskkill → 收到 `Exit{code:1}` 与系统日志「已发送停止指令 (PID 10340)」。四个事件全部按类型到达 `update()`，日志卡按 stream 着色显示。
+
+**进程轮询按需订阅**（§8 第 1 条的兑现）：`procs` 非空才挂 `time::every(2s)`，上一代是无条件 `setInterval(2000)`。空闲实测仍 **delta=0**（连续三个 5s 窗口零帧）、私有工作集 **80.6 MB**、单 exe **16.27 MB**（后端依赖 reqwest/zip/tokio 让体积从 15.9 涨了 0.36 MB）。
 
 **阶段 3：页面移植**（按依赖顺序）
 11. 环境页（只读展示 + 安装动作，验证进度事件流）

@@ -1,8 +1,8 @@
-use crate::envres::{child_path, dsh_cmd, profiles_root};
-use crate::store::Config;
+use crate::core::envres::{child_path, dsh_cmd, profiles_root};
+use crate::core::event::{log, EventSink, LogStream};
+use crate::core::store::Config;
 use serde::Serialize;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,8 +39,8 @@ pub fn list(profile: &str) -> Result<Vec<PluginInfo>, String> {
     Ok(out)
 }
 
-/// 跑 `dsh plugin --profile <name> <op> <source>`，输出按行转发为 dsh-log 事件（stream="plugin"）
-async fn plugin_op(app: AppHandle, profile: &str, op: &str, source: &str) -> Result<(), String> {
+/// 跑 `dsh plugin --profile <name> <op> <source>`，输出按行转发为 Log 事件（stream=Plugin）
+async fn plugin_op(tx: EventSink, profile: &str, op: &str, source: &str) -> Result<(), String> {
     let dsh = dsh_cmd();
     if !dsh.exists() {
         return Err("dsh 未安装，请先到「环境」页安装".into());
@@ -61,7 +61,7 @@ async fn plugin_op(app: AppHandle, profile: &str, op: &str, source: &str) -> Res
     ])
     .current_dir(&cwd)
     .env("PATH", child_path())
-    .env("DSH_HOME", crate::envres::home_dir())
+    .env("DSH_HOME", crate::core::envres::home_dir())
     .creation_flags(0x0800_0000)
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped());
@@ -70,29 +70,23 @@ async fn plugin_op(app: AppHandle, profile: &str, op: &str, source: &str) -> Res
     let mut out = child.stdout.take().unwrap();
     let mut err = child.stderr.take().unwrap();
 
-    let app2 = app.clone();
+    let tx2 = tx.clone();
     let profile_out = profile.to_string();
-    let out_task = tauri::async_runtime::spawn(async move {
+    let out_task = tokio::spawn(async move {
         use tokio::io::AsyncBufReadExt;
         let reader = tokio::io::BufReader::new(&mut out);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app2.emit(
-                "dsh-log",
-                serde_json::json!({ "profile": profile_out, "stream": "plugin", "line": line, "ts": 0 }),
-            );
+            log(&tx2, &profile_out, LogStream::Plugin, line);
         }
     });
     let profile_err = profile.to_string();
-    let err_task = tauri::async_runtime::spawn(async move {
+    let err_task = tokio::spawn(async move {
         use tokio::io::AsyncBufReadExt;
         let reader = tokio::io::BufReader::new(&mut err);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app.emit(
-                "dsh-log",
-                serde_json::json!({ "profile": profile_err, "stream": "plugin", "line": line, "ts": 0 }),
-            );
+            log(&tx, &profile_err, LogStream::Plugin, line);
         }
     });
     let _ = out_task.await;
@@ -105,21 +99,21 @@ async fn plugin_op(app: AppHandle, profile: &str, op: &str, source: &str) -> Res
     }
 }
 
-pub async fn add(app: AppHandle, _cfg: &Config, profile: &str, source: &str) -> Result<(), String> {
+pub async fn add(tx: EventSink, _cfg: &Config, profile: &str, source: &str) -> Result<(), String> {
     if source.trim().is_empty() {
         return Err("插件源不能为空".into());
     }
-    plugin_op(app, profile, "add", source.trim()).await
+    plugin_op(tx, profile, "add", source.trim()).await
 }
 
-pub async fn remove(app: AppHandle, _cfg: &Config, profile: &str, name: &str) -> Result<(), String> {
-    plugin_op(app, profile, "remove", name.trim()).await
+pub async fn remove(tx: EventSink, _cfg: &Config, profile: &str, name: &str) -> Result<(), String> {
+    plugin_op(tx, profile, "remove", name.trim()).await
 }
 
 /// npm registry 的 keywords:dsh-plugin 搜索。比 GitHub topic 精确得多：
 /// 结果就是能直接 `dsh plugin add` 的包，而 topic 搜索会被只打了标签的大仓库淹没。
 async fn npm_search_items(cfg: &Config) -> Result<Vec<MarketItem>, String> {
-    let base = crate::envres::registry_url(cfg);
+    let base = crate::core::envres::registry_url(cfg);
     let url = format!("{base}/-/v1/search?text=keywords:dsh-plugin&size=250");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))

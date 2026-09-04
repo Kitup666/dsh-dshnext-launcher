@@ -1,20 +1,20 @@
-use crate::envres::{child_path, dsh_prefix, node_dir, node_dist_base, DSH_ALLOW_SCRIPTS, DEFAULT_NODE_VERSION};
-use crate::store::Config;
+use crate::core::envres::{child_path, dsh_prefix, node_dir, node_dist_base, DSH_ALLOW_SCRIPTS, DEFAULT_NODE_VERSION};
+use crate::core::event::{progress, EventSink};
+use crate::core::store::Config;
 use futures_util::StreamExt;
 use std::os::windows::process::CommandExt;
-use tauri::{AppHandle, Emitter};
 
-/// 把一段文本按行转发为 env-progress 事件
-fn emit_lines(app: &AppHandle, task: &str, buf: &str) {
+/// 把一段文本按行转发为 EnvProgress 事件
+fn emit_lines(tx: &EventSink, task: &str, buf: &str) {
     for line in buf.lines() {
         if !line.trim().is_empty() {
-            let _ = app.emit("env-progress", serde_json::json!({ "task": task, "line": line }));
+            progress(tx, task, line);
         }
     }
 }
 
 /// 阻塞式收集子进程输出并按行发事件（放到 spawn_blocking 里跑）
-fn run_streaming(app: AppHandle, task: String, mut cmd: std::process::Command) -> Result<(), String> {
+fn run_streaming(tx: EventSink, task: String, mut cmd: std::process::Command) -> Result<(), String> {
     use std::io::BufRead;
     cmd.creation_flags(0x0800_0000);
     let mut child = cmd
@@ -25,16 +25,16 @@ fn run_streaming(app: AppHandle, task: String, mut cmd: std::process::Command) -
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     let t2 = task.clone();
-    let app2 = app.clone();
+    let tx2 = tx.clone();
     let err_thread = std::thread::spawn(move || {
         let reader = std::io::BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
-            let _ = app2.emit("env-progress", serde_json::json!({ "task": t2, "line": line }));
+            progress(&tx2, &t2, line);
         }
     });
     let reader = std::io::BufReader::new(stdout);
     for line in reader.lines().map_while(Result::ok) {
-        let _ = app.emit("env-progress", serde_json::json!({ "task": task, "line": line }));
+        progress(&tx, &task, line);
     }
     err_thread.join().map_err(|_| "stderr 线程异常".to_string())?;
     let status = child.wait().map_err(|e| e.to_string())?;
@@ -64,7 +64,7 @@ fn npm_cmd(cfg: &Config) -> std::process::Command {
 }
 
 /// 下载并解压便携版 Node.js（strip 掉 zip 的顶层目录）
-pub async fn install_node(app: AppHandle, cfg: Config, version: String) -> Result<(), String> {
+pub async fn install_node(tx: EventSink, cfg: Config, version: String) -> Result<(), String> {
     let version = if version.trim().is_empty() {
         DEFAULT_NODE_VERSION.to_string()
     } else {
@@ -86,10 +86,7 @@ pub async fn install_node(app: AppHandle, cfg: Config, version: String) -> Resul
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| e.to_string())?;
-    let _ = app.emit(
-        "env-progress",
-        serde_json::json!({ "task": "node", "line": format!("下载 {url}") }),
-    );
+    let _ = progress(&tx, "node", format!("下载 {url}"));
     let resp = client
         .get(&url)
         .header("User-Agent", "DshDesk")
@@ -115,9 +112,14 @@ pub async fn install_node(app: AppHandle, cfg: Config, version: String) -> Resul
             got += chunk.len() as u64;
             if got >= next_report {
                 next_report = got + (2 << 20);
-                let _ = app.emit(
-                    "env-progress",
-                    serde_json::json!({ "task": "node", "line": format!("已下载 {:.1} / {:.1} MB", got as f64 / 1048576.0, total as f64 / 1048576.0) }),
+                progress(
+                    &tx,
+                    "node",
+                    format!(
+                        "已下载 {:.1} / {:.1} MB",
+                        got as f64 / 1048576.0,
+                        total as f64 / 1048576.0
+                    ),
                 );
             }
         }
@@ -125,7 +127,7 @@ pub async fn install_node(app: AppHandle, cfg: Config, version: String) -> Resul
     }
 
     // 解压放阻塞线程
-    let app2 = app.clone();
+    let tx2 = tx.clone();
     let task = "node".to_string();
     let target2 = target.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
@@ -151,7 +153,7 @@ pub async fn install_node(app: AppHandle, cfg: Config, version: String) -> Resul
                 std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
             }
         }
-        emit_lines(&app2, &task, "Node.js 解压完成");
+        emit_lines(&tx2, &task, "Node.js 解压完成");
         let _ = std::fs::remove_file(&zip_path);
         Ok(())
     })
@@ -165,7 +167,7 @@ pub async fn install_node(app: AppHandle, cfg: Config, version: String) -> Resul
 }
 
 /// 把 dsh 安装/更新到托管前缀（version 传 "latest" 或精确版本号）
-pub async fn install_dsh(app: AppHandle, cfg: Config, version: String) -> Result<(), String> {
+pub async fn install_dsh(tx: EventSink, cfg: Config, version: String) -> Result<(), String> {
     let ver = version.trim();
     let ver = if ver.is_empty() || ver == "latest" {
         "@deepseek-ai/dsh@latest".to_string()
@@ -178,25 +180,25 @@ pub async fn install_dsh(app: AppHandle, cfg: Config, version: String) -> Result
     cmd.arg(&ver);
     std::fs::create_dir_all(dsh_prefix()).map_err(|e| e.to_string())?;
     let task = "dsh".to_string();
-    tokio::task::spawn_blocking(move || run_streaming(app, task, cmd))
+    tokio::task::spawn_blocking(move || run_streaming(tx, task, cmd))
         .await
         .map_err(|e| e.to_string())?
 }
 
 /// 安装 pnpm 到托管前缀（dsh plugin 依赖它）
-pub async fn install_pnpm(app: AppHandle, cfg: Config) -> Result<(), String> {
+pub async fn install_pnpm(tx: EventSink, cfg: Config) -> Result<(), String> {
     let mut cmd = npm_cmd(&cfg);
     cmd.arg("install").arg("-g").arg("--prefix").arg(dsh_prefix());
     cmd.arg("pnpm");
     let task = "pnpm".to_string();
-    tokio::task::spawn_blocking(move || run_streaming(app, task, cmd))
+    tokio::task::spawn_blocking(move || run_streaming(tx, task, cmd))
         .await
         .map_err(|e| e.to_string())?
 }
 
 /// npm registry 上可用的 dsh 版本列表
-pub async fn dsh_versions(cfg: Config, include_rc: bool) -> Result<crate::envres::DshVersions, String> {
-    crate::envres::fetch_dsh_versions(&cfg, include_rc).await
+pub async fn dsh_versions(cfg: Config, include_rc: bool) -> Result<crate::core::envres::DshVersions, String> {
+    crate::core::envres::fetch_dsh_versions(&cfg, include_rc).await
 }
 
 /// 删除托管 Node（供「重装」前清理）
