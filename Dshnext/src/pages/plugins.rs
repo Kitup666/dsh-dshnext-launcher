@@ -31,12 +31,12 @@ fn toolbar_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Mess
     let profile_names: Vec<String> = app.profiles.iter().map(|p| p.name.clone()).collect();
     let current = (!app.selected.is_empty()).then(|| app.selected.clone());
 
-    let mut r = row![txt("版本").size(11).color(pal.text_2)]
+    let mut r = row![txt("版本").size(12).color(pal.text_2)]
         .spacing(10)
         .align_y(Alignment::Center);
 
     if profile_names.is_empty() {
-        r = r.push(txt("（无可用版本）").size(11.5).color(pal.text_3));
+        r = r.push(txt("（无可用版本）").size(12.5).color(pal.text_3));
     } else {
         r = r.push(widgets::dropdown(
             profile_names,
@@ -140,7 +140,7 @@ fn installed_list<'a>(
             )),
             column![
                 txt_bold(p.name.clone()).size(13).color(pal.text),
-                mono(p.version.clone()).size(10.5).color(pal.text_3),
+                mono(p.version.clone()).size(11.5).color(pal.text_3),
             ]
             .spacing(2),
             row![row_btn(
@@ -233,7 +233,7 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
             column![
                 name_row,
                 txt(widgets::ellipsize(&desc, 96))
-                    .size(10.5)
+                    .size(11.5)
                     .color(pal.text_3),
             ]
             .spacing(2),
@@ -248,7 +248,7 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
                 "还有 {} 条未显示，用搜索框收窄范围。",
                 shown.len() - cap
             ))
-            .size(10.5)
+            .size(11.5)
             .color(pal.text_3),
         );
     }

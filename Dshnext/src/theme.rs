@@ -120,10 +120,10 @@ impl Palette {
         surface_3: rgb!(0x262728),
         hover: rgba!(0xffffff, 0.04),
 
-        border: rgba!(0xffffff, 0.09),
-        border_mid: rgba!(0xffffff, 0.13),
+        border: rgba!(0xffffff, 0.06),
+        border_mid: rgba!(0xffffff, 0.09),
         border_hi: rgba!(0xffffff, 0.20),
-        card_border: rgba!(0xffffff, 0.08),
+        card_border: rgba!(0xffffff, 0.05),
 
         text: rgb!(0xf2f2f4),
         text_2: rgb!(0x9a9ca6),

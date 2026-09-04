@@ -79,7 +79,7 @@ fn profile_row<'a>(
     let main = column![
         name_row,
         mono(widgets::ellipsize(&bundles, 88))
-            .size(10.5)
+            .size(11.5)
             .color(pal.text_3),
     ]
     .spacing(2);

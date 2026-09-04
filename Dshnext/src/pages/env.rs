@@ -36,7 +36,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             column![
                 widgets::busy(busy.as_str(), pal),
                 txt("安装过程的完整输出会实时写入「控制台」页。")
-                    .size(10.5)
+                    .size(11.5)
                     .color(pal.text_3),
             ]
             .spacing(8),
@@ -128,7 +128,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
                     .as_str(),
                 72
             ))
-            .size(10.5)
+            .size(11.5)
             .color(pal.text_3),
         ]
         .spacing(2),
@@ -227,7 +227,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
                     .as_str(),
                 72
             ))
-            .size(10.5)
+            .size(11.5)
             .color(pal.text_3),
         ]
         .spacing(2),
@@ -256,7 +256,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
             .spacing(8)
             .align_y(Alignment::Center),
             txt("dsh 的插件命令依赖 pnpm，缺失时插件安装/卸载会失败。")
-                .size(10.5)
+                .size(11.5)
                 .color(pal.text_3),
         ]
         .spacing(2),

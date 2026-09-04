@@ -112,6 +112,28 @@ pub fn list_row<'a, Message: Clone + 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let mut r = Row::new().spacing(15).align_y(Alignment::Center);
+    // 选中态：左侧一条细强调条，不再铺整块底色（暗色上那块蓝灰很脏）。
+    // 条常驻（未选中透明），保证各行左对齐一致。
+    r = r.push(
+        container(space::Space::new())
+            .width(3.0)
+            .height(Length::Fixed(22.0))
+            .style(move |_theme: &Theme| container::Style {
+                text_color: None,
+                background: Some(if selected {
+                    pal.accent.into()
+                } else {
+                    Background::Color(Color::TRANSPARENT)
+                }),
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 2.0.into(),
+                },
+                shadow: Shadow::default(),
+                snap: true,
+            }),
+    );
     if let Some(b) = badge {
         r = r.push(b);
     }
@@ -124,11 +146,7 @@ pub fn list_row<'a, Message: Clone + 'a>(
         .padding(Padding::from([13, 0]))
         .style(move |_theme: &Theme| container::Style {
             text_color: Some(pal.text),
-            background: Some(if selected {
-                pal.row_selected.into()
-            } else {
-                Background::Color(Color::TRANSPARENT)
-            }),
+            background: Some(Background::Color(Color::TRANSPARENT)),
             border: Border {
                 color: Color::TRANSPARENT,
                 width: 0.0,
@@ -160,7 +178,7 @@ pub fn empty<'a, Message: 'a>(
     text_: impl IntoFragment<'a>,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
-    container(txt(text_).size(12).color(pal.text_3))
+    container(txt(text_).size(13).color(pal.text_3))
         .width(Fill)
         .padding(Padding::from([46, 24]))
         .align_x(Alignment::Center)
@@ -175,7 +193,7 @@ pub fn busy<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     row![
         dot(pal.accent),
-        txt(text_).size(11.5).color(pal.text_2),
+        txt(text_).size(12.5).color(pal.text_2),
     ]
     .spacing(8)
     .align_y(Alignment::Center)
@@ -190,12 +208,12 @@ pub fn field<'a, Message: 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let mut col = column![
-        txt_bold(label).size(11).color(pal.text_2),
+        txt_bold(label).size(12).color(pal.text_2),
         control,
     ]
     .spacing(6);
     if let Some(h) = hint {
-        col = col.push(txt(h).size(10.5).color(pal.text_3));
+        col = col.push(txt(h).size(11.5).color(pal.text_3));
     }
     col.width(Fill).into()
 }
@@ -207,8 +225,8 @@ pub fn kv<'a, Message: 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     row![
-        container(txt(key).size(11).color(pal.text_2)).width(Length::Fixed(96.0)),
-        mono(value).size(11).color(pal.text_3),
+        container(txt(key).size(12).color(pal.text_2)).width(Length::Fixed(96.0)),
+        mono(value).size(12).color(pal.text_3),
     ]
     .spacing(12)
     .into()
@@ -225,7 +243,7 @@ pub fn input<'a, Message: Clone + 'a>(
     text_input(placeholder, value)
         .on_input(on_input)
         .padding(Padding::from([9, 12]))
-        .size(11.5)
+        .size(12.5)
         .font(if is_mono { FONT_MONO } else { FONT_SANS })
         .style(move |_theme: &Theme, status: text_input::Status| {
             let focused = matches!(status, text_input::Status::Focused { .. });
@@ -240,7 +258,7 @@ pub fn input<'a, Message: Clone + 'a>(
                     } else {
                         pal.border_mid
                     },
-                    width: 1.0,
+                    width: 0.3,
                     radius: R_CTL.into(),
                 },
                 icon: pal.text_3,
@@ -263,7 +281,7 @@ pub fn secret_input<'a, Message: Clone + 'a>(
     let mut ti = text_input(placeholder, value)
         .on_input(on_input)
         .padding(Padding::from([9, 12]))
-        .size(11.5)
+        .size(12.5)
         .font(FONT_MONO)
         .style(move |_theme: &Theme, status: text_input::Status| {
             let focused = matches!(status, text_input::Status::Focused { .. });
@@ -271,7 +289,7 @@ pub fn secret_input<'a, Message: Clone + 'a>(
                 background: pal.input_bg.into(),
                 border: Border {
                     color: if focused { pal.accent } else { pal.border_mid },
-                    width: 1.0,
+                    width: 0.3,
                     radius: R_CTL.into(),
                 },
                 icon: pal.text_3,
@@ -312,7 +330,7 @@ pub fn check<'a, Message: Clone + 'a>(
                 icon_color: pal.on_accent,
                 border: Border {
                     color: if on { pal.accent } else { pal.border_mid },
-                    width: 1.0,
+                    width: 0.3,
                     radius: 5.0.into(),
                 },
                 text_color: Some(pal.text_2),
@@ -352,7 +370,7 @@ where
                 background: pal.input_bg.into(),
                 border: Border {
                     color: if hovered { pal.border_hi } else { pal.border_mid },
-                    width: 1.0,
+                    width: 0.3,
                     radius: R_CTL.into(),
                 },
             }
@@ -361,7 +379,7 @@ where
             background: pal.surface_1.into(),
             border: Border {
                 color: pal.border_mid,
-                width: 1.0,
+                width: 0.3,
                 radius: R_CTL.into(),
             },
             text_color: pal.text,
@@ -381,7 +399,7 @@ pub fn segmented<'a, Message: Clone + 'a>(
     for (label, on, msg) in items {
         let seg = container(
             txt_bold(label)
-                .size(11)
+                .size(12)
                 .color(if on { pal.text } else { pal.text_2 }),
         )
         .padding(Padding::from([6, 14]))
@@ -427,7 +445,7 @@ pub fn page_head<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     let left = column![
         txt_bold(title).size(19).color(pal.text),
-        txt(desc).size(12).color(pal.text_3),
+        txt(desc).size(13).color(pal.text_3),
     ]
     .spacing(5);
     let mut r = row![left, space::horizontal()]
@@ -506,7 +524,7 @@ pub fn toast_host<'a, Message: 'a>(
                     shadow: Shadow::default(),
                     snap: true,
                 }),
-            txt(t.text.as_str()).size(11.5).color(pal.text),
+            txt(t.text.as_str()).size(12.5).color(pal.text),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
@@ -520,7 +538,7 @@ pub fn toast_host<'a, Message: 'a>(
                     background: Some(pal.surface_1.into()),
                     border: Border {
                         color: pal.card_border,
-                        width: 1.0,
+                        width: 0.3,
                         radius: 12.0.into(),
                     },
                     shadow: pal.shadow_pop,

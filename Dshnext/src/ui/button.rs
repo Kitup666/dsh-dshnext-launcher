@@ -151,7 +151,7 @@ fn style_for(
             text_color: pal.text,
             border: Border {
                 color: theme::lerp(pal.border_mid, pal.border_hi, t),
-                width: 1.0,
+                width: 0.3,
                 radius,
             },
             shadow: pal.shadow_ctl,
@@ -206,7 +206,7 @@ fn style_for(
             text_color: theme::lerp(pal.text_2, pal.bad, t),
             border: Border {
                 color: theme::lerp(pal.border_mid, pal.bad, t),
-                width: 1.0,
+                width: 0.3,
                 radius,
             },
             shadow: Shadow::default(),

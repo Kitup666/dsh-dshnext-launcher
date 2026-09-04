@@ -247,7 +247,7 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     let foot = column![
         row![
             widgets::dot(dot_color),
-            txt(ready_text).size(10.5).color(pal.text_3),
+            txt(ready_text).size(11.5).color(pal.text_3),
         ]
         .spacing(8)
         .align_y(Alignment::Center),
@@ -303,7 +303,7 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
     let t = app.anim.value(key);
 
     let (bg, border_c, border_w) = if active {
-        (pal.surface_1.into(), pal.card_border, 1.0)
+        (pal.surface_1.into(), pal.card_border, 0.3)
     } else {
         (
             theme::lerp(Color::TRANSPARENT, pal.hover, t).into(),
@@ -324,7 +324,7 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
 
     let mut inner = row![
         icon::icon::<Message>(page.icon(), 18.0, icon_c),
-        txt(page.label()).size(12).color(text_c),
+        txt(page.label()).size(13).color(text_c),
     ]
     .spacing(11)
     .align_y(Alignment::Center);
@@ -365,9 +365,9 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
 
 fn foot_row<'a>(k: &'static str, v: String, pal: &'static Palette) -> Element<'a, Message> {
     row![
-        txt(k).size(10.5).color(pal.text_3),
+        txt(k).size(11.5).color(pal.text_3),
         space::horizontal(),
-        mono(widgets::ellipsize(&v, 16)).size(10.5).color(pal.text_2),
+        mono(widgets::ellipsize(&v, 16)).size(11.5).color(pal.text_2),
     ]
     .width(Fill)
     .into()

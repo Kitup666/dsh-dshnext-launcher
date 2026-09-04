@@ -154,7 +154,7 @@ pub fn overlay<'a, Message: Clone + 'a + 'static>(
 
     let mut body = Column::new()
         .push(txt_bold(title).size(15).color(pal.text))
-        .push(txt(desc).size(11.5).color(pal.text_3))
+        .push(txt(desc).size(12.5).color(pal.text_3))
         .spacing(6);
 
     if dialog.needs_input() {
@@ -203,7 +203,7 @@ pub fn overlay<'a, Message: Clone + 'a + 'static>(
             background: Some(pal.surface_1.into()),
             border: Border {
                 color: pal.card_border,
-                width: 1.0,
+                width: 0.3,
                 radius: 18.0.into(),
             },
             shadow: pal.shadow_pop,

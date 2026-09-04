@@ -44,7 +44,7 @@ pub fn card_style(
         // 亮色：card_border 为 transparent，维持白卡 + 阴影浮起。
         border: Border {
             color: pal.card_border,
-            width: 1.0,
+            width: 0.3,
             radius: R_CARD.into(),
         },
         shadow: pal.shadow_card,
@@ -63,7 +63,7 @@ pub fn card_sub<'a, Message: 'a>(
     s: impl IntoFragment<'a>,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
-    txt(s).size(11.5).color(pal.text_3).into()
+    txt(s).size(12.5).color(pal.text_3).into()
 }
 
 #[allow(dead_code)] // 阶段 3 表单页用

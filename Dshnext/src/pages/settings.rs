@@ -161,7 +161,7 @@ fn launch_behavior<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, M
             row![
                 space::horizontal().width(24.0),
                 txt("Web 界面在系统默认浏览器中打开。")
-                    .size(10.5)
+                    .size(11.5)
                     .color(pal.text_3),
             ],
         ]
@@ -291,7 +291,7 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
             .push(space::vertical().height(4.0))
             .push(
                 txt("单文件绿色版，无需安装运行时。")
-                    .size(10.5)
+                    .size(11.5)
                     .color(pal.text_3),
             )
             .spacing(4)

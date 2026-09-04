@@ -87,7 +87,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             background: Some(pal.input_bg.into()),
             border: Border {
                 color: pal.border,
-                width: 1.0,
+                width: 0.3,
                 radius: R_CTL.into(),
             },
             shadow: Shadow::default(),
@@ -122,7 +122,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
                 background: Some(pal.input_bg.into()),
                 border: Border {
                     color: pal.border,
-                    width: 1.0,
+                    width: 0.3,
                     radius: R_CTL.into(),
                 },
                 shadow: Shadow::default(),
@@ -187,7 +187,7 @@ fn log_row<'a>(
                 .color(pal.text_3),
         );
     }
-    r.push(mono(l.line.as_str()).size(10.5).color(color)).into()
+    r.push(mono(l.line.as_str()).size(11.5).color(color)).into()
 }
 
 fn tool_btn<'a>(

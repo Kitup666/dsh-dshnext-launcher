@@ -36,7 +36,7 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
     let left = column![
         txt("DEEPSEEK HARNESS").size(9.5).color(pal.text_3),
         txt_bold(title).size(HERO_NUM_SIZE * 0.62).color(pal.text),
-        txt(desc).size(12).color(pal.text_2),
+        txt(desc).size(13).color(pal.text_2),
     ]
     .spacing(6);
 
@@ -120,7 +120,7 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
         background: Some(pal.surface_1.into()),
         border: Border {
             color: pal.card_border,
-            width: 1.0,
+            width: 0.3,
             radius: 20.0.into(),
         },
         shadow: pal.shadow_card,
@@ -178,13 +178,13 @@ fn meta_strip<'a>(
             150.0,
             pal
         ),
-        meta_cell("WEB 地址", mono(addr).size(12).color(addr_color).into(), 190.0, pal),
+        meta_cell("WEB 地址", mono(addr).size(13).color(addr_color).into(), 190.0, pal),
         meta_cell(
             "进程 PID",
             // 有值走等宽（数字对齐），无值走正文——同一个破折号在两种字体下宽度不同，
             // 混用会让两个空位看起来是不同符号。
             match running {
-                Some(p) => mono(p.pid.to_string()).size(12).color(pal.text).into(),
+                Some(p) => mono(p.pid.to_string()).size(13).color(pal.text).into(),
                 None => txt_bold(DASH).size(13).color(pal.text).into(),
             },
             130.0,
@@ -260,7 +260,7 @@ fn instance_row<'a>(
             p.pid,
             fmt_uptime(p.uptime_secs)
         ))
-        .size(10.5)
+        .size(11.5)
         .color(pal.text_3),
     ]
     .spacing(2);
