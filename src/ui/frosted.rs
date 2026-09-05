@@ -5,8 +5,8 @@
 //! 用户截图抓的正是这个），iced 没有「随兄弟尺寸」的图元长度，只能自己写
 //! 布局跟随内容的 widget。
 //!
-//! 绘制顺序在同一个 layer 里靠 with_layer 保序：glass 底 quad → 颗粒
-//! （`draw_image` 拉伸到卡片实际 bounds）→ 内容（按钮/下拉/文字全部在
+//! 绘制顺序在同一个 layer 里靠 with_layer 保序：glass 底 quad → 光球+颗粒
+//! 共享场（窗口锚定，卡片只是裁剪窗）→ 内容（按钮/下拉/文字全部在
 //! 颗粒之上，不受污染）。pick_list 弹层走 overlay 委托，不受影响。
 
 use iced::advanced::image::Renderer as _;
@@ -20,31 +20,22 @@ use iced::{Color, Element, Length, Padding, Point, Rectangle, Size, Vector};
 
 // ── 滚动对齐 ─────────────────────────────────────────────────────────────
 // 卡片的 bounds.pos 是「滚动内容空间」坐标：scrollable 用
-// with_translation(-offset) 画内容，滚动时卡片窗口位置 = 原点 + pos - offset，
-// 而 backdrop 光球必须钉在窗口上（背景球不动）。offset 拿不到渲染器状态，
-// 只能由主滚动区 on_scroll 存进来（pages/mod.rs 接线），draw 时读回。
+// with_translation(-offset) 画内容，卡片窗口位置 = 原点 + pos - 平移，
+// 而 backdrop 光球/颗粒场必须钉在窗口上（窗外球不动）。
+//
+// 平移量不另存全局：scrollable 传给内容子树的 viewport.pos = 主区原点 +
+// 平移（容器链默认不裁剪 viewport，reveal 也原样透传），draw 时直接反推。
+// 切页、滚动钳制、改布局都天然自洽，不会出现全局状态与 widget 状态脱节。
 //
 // 主滚动区的窗口原点（逻辑 px）：侧边栏 232 + 1px 分隔线，标题栏 TITLEBAR_H。
 // 与 pages/mod.rs 的布局联动——改那边的布局要同步改这里。
 const MAIN_ORIGIN: (f32, f32) = (233.0, 38.0);
 
-static SCROLL_X: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-static SCROLL_Y: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-/// 主滚动区滚动时由 on_scroll 闭包调用（f32 走 to_bits 存原子）。
-pub fn set_scroll_offset(x: f32, y: f32) {
-    use std::sync::atomic::Ordering::Relaxed;
-    SCROLL_X.store(x.to_bits(), Relaxed);
-    SCROLL_Y.store(y.to_bits(), Relaxed);
-}
-
-fn scroll_offset() -> (f32, f32) {
-    use std::sync::atomic::Ordering::Relaxed;
-    (
-        f32::from_bits(SCROLL_X.load(Relaxed)),
-        f32::from_bits(SCROLL_Y.load(Relaxed)),
-    )
-}
+// 颗粒场：GRAIN_ROWS×GRAIN_COLS 张瓦片铺窗口逻辑坐标，瓦片 1:1 贴逻辑像素。
+// 2048×1376 覆盖本机最大窗口（2560×1600 物理 @125% = 2048×1280 逻辑）。
+const GRAIN_TILE: (f32, f32) = (1024.0, 688.0);
+const GRAIN_ROWS: usize = 2;
+const GRAIN_COLS: usize = 2;
 
 /// 磨砂卡片。`grain <= 0.0`（亮色主题）时只画 glass 底，零图片采样。
 pub struct Frosted<'a, Message> {
@@ -138,18 +129,19 @@ where
         //    是我们想要的叠放；内容再开一层，绝不与它们同层。
         if self.grain > 0.0 || self.backdrop.is_some() {
             renderer.with_layer(bounds, |renderer| {
+                // 平移量由 viewport 反推（见模块顶注释）：viewport.pos =
+                // 主区原点 + 滚动平移 → 卡片窗口位置 = 原点 + bounds.pos - 平移。
+                let (ox, oy) = MAIN_ORIGIN;
+                let tx = viewport.x - ox;
+                let ty = viewport.y - oy;
+                let wx = ox + bounds.x - tx;
+                let wy = oy + bounds.y - ty;
                 if let Some(specs) = self.backdrop {
                     use iced::advanced::graphics::mesh::Renderer as _;
-                    let (ox, oy) = MAIN_ORIGIN;
-                    let (sx, sy) = scroll_offset();
                     for (window_center, radius, color) in specs {
-                        // 内容空间 → 窗口坐标：主区原点 + bounds.pos - 滚动平移。
                         // 切页 reveal 的 ~300ms 位移动画不参与换算，过渡瞬间
                         // 卡内球会短暂错位，落定即恢复——可接受。
-                        let wx = ox + bounds.x - sx;
-                        let wy = oy + bounds.y - sy;
-                        let local =
-                            Point::new(window_center.x - wx, window_center.y - wy);
+                        let local = Point::new(window_center.x - wx, window_center.y - wy);
                         renderer.draw_mesh(crate::ui::glow_mesh::build_orb(
                             local,
                             radius,
@@ -169,7 +161,26 @@ where
                     let img = image::Image::new(handle.clone())
                         .opacity(self.grain)
                         .filter_method(image::FilterMethod::Linear);
-                    renderer.draw_image(img, bounds, clipped);
+                    // 颗粒场是**窗口锚定的共享贴图**：2×2 张瓦片在窗口逻辑坐标
+                    // (0,0)-(2048,1376) 上 1:1 铺一片场，所有卡采样同一片——
+                    // 卡片只是裁剪窗（用户定的架构），不再每卡各自拉伸瓦片。
+                    // 滚动时场钉在窗口上，与光球一致。换算：内容 = 窗口
+                    // - 主区原点 + 平移（与上面光球同一套）。
+                    let (tw, th) = GRAIN_TILE;
+                    for row in 0..GRAIN_ROWS {
+                        for col in 0..GRAIN_COLS {
+                            let tile = Rectangle::new(
+                                Point::new(
+                                    col as f32 * tw - ox + tx,
+                                    row as f32 * th - oy + ty,
+                                ),
+                                Size::new(tw, th),
+                            );
+                            if tile.intersection(&bounds).is_some() {
+                                renderer.draw_image(img.clone(), tile, clipped);
+                            }
+                        }
+                    }
                 }
             });
         }
