@@ -19,7 +19,7 @@ use crate::ui::widgets;
 use crate::ui::{mono, titlebar, txt, txt_bold};
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, space, stack};
 use iced::{
-    Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme, Vector,
+    Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,28 +218,13 @@ fn ambient(pal: &'static Palette) -> Element<'static, Message> {
 
 fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
     let brand = row![
-        container(txt_bold("D").size(16).color(pal.on_accent))
-            .center_x(34.0)
-            .center_y(34.0)
-            .style(move |_theme: &Theme| container::Style {
-                text_color: Some(pal.on_accent),
-                background: Some(iced::Background::Gradient(iced::Gradient::Linear(
-                    iced::gradient::Linear::new(iced::Degrees(150.0))
-                        .add_stop(0.0, pal.accent_hi)
-                        .add_stop(1.0, pal.accent),
-                ))),
-                border: Border {
-                    color: Color::TRANSPARENT,
-                    width: 0.0,
-                    radius: 10.0.into(),
-                },
-                shadow: Shadow {
-                    color: theme::with_alpha(pal.accent_line, 0.9),
-                    offset: Vector::new(0.0, 4.0),
-                    blur_radius: 12.0,
-                },
-                snap: true,
-            }),
+        // 品牌头像：与 exe 图标同源的插画。圆角烘在 PNG 的 alpha 里（image
+        // widget 本身不支持圆角），角上透出的是环境光渐变，不是黑块。
+        iced::widget::image::Image::new(iced::widget::image::Handle::from_bytes(
+            include_bytes!("../../assets/icons/brand.png").to_vec(),
+        ))
+        .width(Length::Fixed(34.0))
+        .height(Length::Fixed(34.0)),
         column![
             txt_bold("DshDesk").size(FS_TITLE).color(pal.text),
             txt("DeepSeek Harness 启动器").size(FS_MICRO).color(pal.text_3),

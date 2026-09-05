@@ -15,6 +15,7 @@ iced = { version = "0.14", default-features = false, features = [
     "advanced",
     "canvas",
     "svg",
+    "image",
     "tokio",
     "thread-pool",
 ] }
