@@ -203,7 +203,7 @@ draws total=2 delta=0   ← 之后 115 秒，一帧都没有
 ## 复现方法
 
 ```bash
-cd Dshnext/phase0
+cd phase0
 
 # 字体（需要 python + fonttools，源字体已在 tools/）
 python tools/build_fonts.py

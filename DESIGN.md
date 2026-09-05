@@ -3,8 +3,8 @@
 DshDesk（Tauri + React）的原生重写。**后端逻辑整体复用，前端换成纯 Rust GPU 渲染**，目标是把「低占用」和「高视觉」同时拿到。
 
 - 状态：**阶段 0～5 全部完成**（可行性 / 视觉地基 / 后端接入 / 页面移植 / 收尾 / 切页动画与排版收口）。六个页面全部移植，模态、toast、Ctrl+1..6 都在；三轮视觉验收全 pass；`iced_test` 14 例全绿；性能逐项实测（切页动画后空闲仍归零）；单 exe + NSIS 安装包已产出，与上一代六页并排对比图在 `shots/compare-p5/`。唯一未在本机闭环的是「干净 Win10 VM 首帧复核」——需要一台无重复适配器的机器，见 §9「首帧真相」与 §13 待办。
-- 上一代：`../src-tauri`（Rust 后端）+ `../src`（React 前端），已可用并出过 NSIS 安装包
-- 本目录：`src/core/` 是从上一代直接复制的后端模块（1163 行），`phase0/` 是探针工程与实测报告，`docs/*.tauri-reference` 是对照用的旧文件
+- 上一代（Tauri + React）：已于 2026-09-05 从工作区删除，代码在 git 历史 `11a2401^` 之前（`git show 11a2401^:src-tauri` 等可翻出）；它出过 NSIS 安装包，功能完整
+- 本仓库根即 Dshnext：`src/core/` 是从上一代直接复制的后端模块（1163 行），`phase0/` 是探针工程与实测报告，`docs/*.tauri-reference` 是对照用的旧文件
 
 ---
 
@@ -181,7 +181,7 @@ iced 侧用 `Subscription::run` 把 channel 接收端变成消息流，事件直
 iced 是 Elm 架构：`State → view() → Element → 用户操作 → Message → update() → 新 State`。天然契合「状态变化才重绘」。
 
 ```
-Dshnext/
+仓库根（原 Dshnext/，第一代删除后提升为根）
 ├── DESIGN.md
 ├── Cargo.toml
 ├── build.rs                    # 嵌入图标与清单（DPI-aware、无控制台）
@@ -761,8 +761,8 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 
 ## 11. 与上一代的关系
 
-- **不是替换，是并行**。`../src-tauri` + `../src` 继续可用，`Dshnext/` 达标后才考虑谁是主线。
-- **数据完全兼容**：共用 `%LOCALAPPDATA%\DshDesk\`（config.json、runtime、home/profiles），两个版本可互换使用，用户无感。
+- **已替换**。上一代曾计划并行维护，2026-09-05 决定删除，代码只存在于 git 历史；Dshnext 是唯一主线。
+- **数据完全兼容**：共用 `%LOCALAPPDATA%\DshDesk\`（config.json、runtime、home/profiles），老用户装上新版直接接着用。
   - 注意：`config.json` 里的 `open_mode` 字段在 Dshnext 中被忽略（§5），反序列化需容忍未知/无用字段（`serde(default)` 已在用）。
 - **术语与交互保持一致**：页面名、按钮文案、快捷键（Ctrl+1..6）都不变，降低学习成本。
 
@@ -776,7 +776,7 @@ assert!(ui.find("e2e-test").is_ok(), "列表里应出现新版本");
 |---|---|---|
 | **内置 WebUI 窗口** | ❌ 移除 | 改为系统浏览器打开（§5）。设置里的「Web 界面打开方式」选项一并移除 |
 | **可访问性（屏幕阅读器）** | ❌ 退步 | iced 0.14 无 AccessKit 集成，**已实测**：UIA 树里窗口后代数 = 0。上一代靠 WebView2 白送完整 a11y 树，原生版暂无。需在 README 声明 |
-| **UIA 自动化脚本** | ⚠️ 换方案 | `../scripts/e2e.ps1` 失效，改用 `iced_test`（§9）。截图脚本 `shot.ps1`/`capture-pages.ps1` 仍可用（PrintWindow 与框架无关）；另外 iced 自带 `window::screenshot()`，能在进程内取图，比 PrintWindow 更干净——阶段 0 的渲染截图就是这么来的 |
+| **UIA 自动化脚本** | ⚠️ 换方案 | 第一代 `scripts/e2e.ps1` 失效（已随第一代删除），改用 `iced_test`（§9）。截图脚本 `shot.ps1`/`capture-pages.ps1` 仍可用（PrintWindow 与框架无关）；另外 iced 自带 `window::screenshot()`，能在进程内取图，比 PrintWindow 更干净——阶段 0 的渲染截图就是这么来的 |
 | **常驻内存 40 MB 的原目标** | ⚠️ 放宽 | GPU 后端做不到，79.8 MB 里约 75 MB 是显卡驱动常驻。目标改为分档（§1），判据变成「显著低于上一代」 |
 | **`Shadow` 无 spread** | ⚠️ 近似 | 上一代 CSS 用负 spread 收缩阴影，iced 只能调小 `blur_radius` 近似，观感等价 |
 | **OpenType feature（`tnum` 等）** | ❌ 不可用 | iced 从不设置 cosmic-text 的 `font_features`。等宽数字只能靠字体天然等宽（§6） |

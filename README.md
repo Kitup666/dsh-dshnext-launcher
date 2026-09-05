@@ -85,9 +85,9 @@ packaging/    NSIS 安装包脚本
 | 内存 | 199 MB | 88.5 MB（GPU）/ 15.3 MB（软件） |
 | WebUI 窗口 | 内置窗口 | **交给系统浏览器** |
 | 可访问性 | WebView2 自带 a11y 树 | **暂无**（iced 0.14 无 AccessKit，UIA 树里后代数为 0） |
-| 自动化测试 | UIA 脚本（`../scripts/e2e.ps1`） | `iced_test`（框架内模拟，`src/tests.rs`） |
+| 自动化测试 | UIA 脚本（第一代 `scripts/e2e.ps1`，已随第一代删除） | `iced_test`（框架内模拟，`src/tests.rs`） |
 | 数据目录 | `%LOCALAPPDATA%\DshDesk\` | 同一个，完全兼容 |
 
 **已知退步**：无屏幕阅读器支持（可访问性）；本机 GUI+DX12 首帧偏慢（驱动特异性）。取舍清单见 [DESIGN.md §12](DESIGN.md)。
 
-上一代（Tauri 版）保持可用，**不因本重构而删除或停止维护**，直到 Dshnext 在干净机器上全部达标。
+上一代（Tauri 版）已于 2026-09-05 删除，代码保留在 git 历史（`11a2401^` 之前）。数据目录不变，老用户无缝换用。
