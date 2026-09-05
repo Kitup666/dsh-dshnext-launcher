@@ -101,10 +101,11 @@ where
         //    参考用户给的 glassmorphism shader：col = mix(背景, 磨砂色, mask)。
         iced::widget::container::draw_background(renderer, &self.style, bounds);
 
-        // 2. 伪造 backdrop-blur：同一对光球的柔化版（半径 ×1.5、alpha ×0.8），
-        //    圆心换算到卡内局部坐标，整层 with_layer 裁剪在卡内。卡面颜色
-        //    随位置对应窗外背景的模糊版 = 磨砂透感（参考用户给的
-        //    glassmorphism shader 的 mix(背景, 磨砂色, mask) 结构）。
+        // 2. 伪造 backdrop-blur：**与背景完全同参**的光球（高斯模糊不位移，
+        //    半径/浓度都必须和窗外一致——用户指出「晕染和背景对不上」的根因
+        //    就是之前的 ×1.5/×0.8 柔化偏移），圆心换算到卡内局部坐标，整层
+        //    with_layer 裁剪在卡内。卡内颜色 = 窗外该位置的本底 + 光球，玻璃
+        //    的磨砂感由底色 sheen 渐变 + 颗粒承担。
         //    光球 mesh 和颗粒 image 放同一层：同层 pass 序 mesh→image 正好
         //    是我们想要的叠放；内容再开一层，绝不与它们同层。
         if self.grain > 0.0 || self.backdrop.is_some() {
@@ -116,11 +117,10 @@ where
                             window_center.x - bounds.x,
                             window_center.y - bounds.y,
                         );
-                        let soft = Color { a: color.a * 0.8, ..color };
                         renderer.draw_mesh(crate::ui::glow_mesh::build_orb(
                             local,
-                            radius * 1.5,
-                            soft,
+                            radius,
+                            color,
                             clipped,
                         ));
                     }

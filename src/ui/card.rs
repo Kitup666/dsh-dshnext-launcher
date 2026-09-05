@@ -13,11 +13,11 @@
 //! - `card_hero()`：页面英雄区，圆角与阴影都升一档（R_HERO 20 + shadow_hero）。
 //!   首页 hero 用它——两者视觉重量相同的话，hero 和它下面的列表卡分不出主次。
 
-use crate::theme::{FS_SMALL, FS_TITLE, Palette, R_CARD, R_HERO};
+use crate::theme::{self, FS_SMALL, FS_TITLE, Palette, R_CARD, R_HERO};
 use crate::ui::{txt, txt_bold};
 use iced::widget::text::IntoFragment;
 use iced::widget::{Column, container};
-use iced::{Border, Element, Fill, Padding, Shadow, Theme};
+use iced::{Border, Color, Element, Fill, Padding, Shadow, Theme};
 
 /// 标准卡片容器：padding 24，圆角 16，shadow_card，磨砂（glass + 卡内颗粒）。
 pub fn card<'a, Message: 'static>(
@@ -60,12 +60,19 @@ fn frosted<'a, Message: 'static>(
 }
 
 /// 卡面样式：**不透明** surface_1 底——磨砂的「透」由 Frosted 画进卡内的
-/// 柔化光球承担，真半透明底下没东西可透只剩噪声（2026-09-06 教训）。
-/// + 1px 白描边勾轮廓（黑底上黑阴影不可见，借鉴 orevx）；亮色白卡+阴影。
+/// 同参光球承担，真半透明底下没东西可透只剩噪声（2026-09-06 教训）。
+/// 底色带 160° sheen 渐变（左上混 4% 白 → 落回本色）：光打在玻璃上的
+/// 高光，玻璃感的主要来源之一。+ 1px 白描边勾轮廓（借鉴 orevx）。
 fn surface_style(pal: &'static Palette, radius: f32, shadow: Shadow) -> container::Style {
+    let base = pal.surface_1;
+    let sheen = theme::lerp(base, Color::WHITE, 0.045);
     container::Style {
         text_color: Some(pal.text),
-        background: Some(pal.surface_1.into()),
+        background: Some(iced::Background::Gradient(iced::Gradient::Linear(
+            iced::gradient::Linear::new(iced::Degrees(160.0))
+                .add_stop(0.0, sheen)
+                .add_stop(0.4, base),
+        ))),
         border: Border {
             color: pal.card_border,
             width: 0.3,
