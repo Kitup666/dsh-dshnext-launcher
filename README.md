@@ -24,8 +24,11 @@ profile 扫真实目录，启停走 spawn/taskkill，日志经 tokio channel 进
 
 ## 怎么跑
 
+**懒人版：仓库根 `dev.bat`**。默认 `cargo run --release`，自动绕过死代理（`no_proxy=*`）、自动杀掉残留的 `dshnext.exe`（否则构建报 os error 5）；`-l` 开每条 Message 的日志，`-d` 切 debug profile，其余参数原样透传给程序（`--page`、`--shot`、`--e2e`……）。
+
+手动版（在仓库根执行）：
+
 ```bash
-cd Dshnext
 cargo run --release                      # 开窗，鼠标 hover 看过渡，按 T 切主题
 cargo test                               # 14 例 iced_test（headless，无需 GPU/窗口）
 cargo run --release -- --shot out.png --after 5000 --theme dark   # 自截图退出
