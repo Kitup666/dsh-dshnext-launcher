@@ -114,16 +114,14 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         .into()
     };
 
-    // 切页入场：内容整体下移 + 背景色面纱淡出（src/ui/reveal.rs）。
-    // 只包主区一个元素——侧边栏和标题栏不动，视线才有锚点；同时也是「一次只动
-    // 1~2 个元素」这条动效纪律。落定后 t=0，reveal 走直通分支，零开销。
+    // 切页入场：内容整体上移落位（src/ui/reveal.rs）。面纱淡入已删——盖整块区域
+    // 会让背景变暗，用户否了。只包主区一个元素——侧边栏和标题栏不动，视线才有
+    // 锚点；同时也是「一次只动 1~2 个元素」这条动效纪律。落定后 t=0，reveal 走
+    // 直通分支，零开销。
     let main_area: Element<'_, Message> = reveal(
         body,
         app.anim.value(anim::PAGE),
         anim::PAGE_SHIFT,
-        pal.bg_app,
-        // 面纱最深 0.9 而不是 1.0：全遮会让第一帧是纯色块，像闪屏。
-        0.9,
     );
 
     let inner = column![

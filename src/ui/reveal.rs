@@ -1,32 +1,30 @@
 //! 切页入场包装件（DESIGN.md §7.7）。
 //!
-//! 只做两件事，都在 `draw` 里：把内容**整体下移**一点，再盖一层**背景色面纱**。
-//! 两者由同一个补间驱动（`anim::PAGE`，1 = 刚切过来，0 = 已落定）。
+//! 只做一件事，在 `draw` 里：把内容**整体上移落位**（起始时下移 `shift` 像素）。
+//! 由 `anim::PAGE` 补间驱动（1 = 刚切过来，0 = 已落定）。
 //!
 //! 为什么不做别的：
 //! - **不动 padding/height**，否则每帧都要重新布局，长页面（设置页六张卡）
 //!   要重排整棵树；平移只影响 `draw`，布局结果逐帧完全复用。
 //! - **不用 `Transformation::scale`**：缩放会连文字一起缩，cosmic-text 在非整数
 //!   缩放下要么重新栅格化（每帧一次，白扔性能）要么拉伸图集（更糊）。字已经够糊了。
-//! - **淡入只能靠面纱**：iced 0.14 的 `renderer::Style` 只有 `text_color`，没有
-//!   全局 opacity，wgpu 后端也没有「把一层画进纹理再整体调 alpha」的入口。
-//!   模态遮罩用的就是同一招（`bg_app` 半透明叠加），已过视觉验收。
+//! - **不做面纱淡入**（曾实现过，用户否了）：面纱盖的是整块区域，主区实际背景比
+//!   `bg_app` 亮，盖上去背景肉眼可见地变暗，观感像闪屏。「淡入只能靠面纱」这个
+//!   技术结论仍然成立（iced 0.14 没有全局 opacity），但代价是背景被染色——
+//!   位移单独用就够了。
 //!
 //! 这个 widget 在树里是**透明的**：tag/state/children/layout 全部直通内容
 //! （抄 `iced_widget::themer` 的做法），所以补间值变化不会引起任何树 diff。
 
 use iced::advanced::widget::{Operation, Tree, tree};
 use iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, overlay, renderer};
-use iced::{Background, Color, Element, Event, Length, Rectangle, Size, Vector};
+use iced::{Element, Event, Length, Rectangle, Size, Vector};
 
-/// 包一层入场动画。`t` 是剩余进度（1 = 刚切过来、0 = 落定），`shift` 是起始下移
-/// 距离，`veil` 是面纱色（用 `bg_app`），`veil_max` 是面纱最大不透明度。
+/// 包一层入场动画。`t` 是剩余进度（1 = 刚切过来、0 = 落定），`shift` 是起始下移距离。
 pub fn reveal<'a, Message, Theme, Renderer>(
     content: impl Into<Element<'a, Message, Theme, Renderer>>,
     t: f32,
     shift: f32,
-    veil: Color,
-    veil_max: f32,
 ) -> Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
@@ -37,8 +35,6 @@ where
         content: content.into(),
         t: t.clamp(0.0, 1.0),
         shift,
-        veil,
-        veil_max,
     })
 }
 
@@ -46,8 +42,6 @@ struct Reveal<'a, Message, Theme, Renderer> {
     content: Element<'a, Message, Theme, Renderer>,
     t: f32,
     shift: f32,
-    veil: Color,
-    veil_max: f32,
 }
 
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -141,7 +135,7 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        // 落定态走原路：不推变换、不画面纱，和没包这层完全一样。
+        // 落定态走原路：不推变换，和没包这层完全一样。
         if self.t <= f32::EPSILON {
             self.content
                 .as_widget()
@@ -153,27 +147,6 @@ where
             self.content
                 .as_widget()
                 .draw(tree, renderer, theme, style, layout, cursor, viewport);
-        });
-
-        // 面纱**必须自己开一层**。两个后端在同一层里都是「先画所有 quad，再画所有
-        // 文字」（wgpu 见 lib.rs 的 render 循环，tiny-skia 同序），面纱如果落在内容
-        // 那一层，文字会盖在它上面——底色淡入而文字全程清晰，比不做动画更怪。
-        // `with_layer` 走 `push_clip`，新层的序号一定更大，于是稳定地画在内容之后。
-        //
-        // 盖的是**未平移**的整块区域：内容下移后会探出布局边界，按未平移的 bounds
-        // 盖才能同时罩住两个位置。
-        let bounds = layout.bounds();
-        renderer.with_layer(bounds, |renderer| {
-            renderer.fill_quad(
-                renderer::Quad {
-                    bounds,
-                    ..Default::default()
-                },
-                Background::Color(Color {
-                    a: self.veil.a * self.veil_max * self.t,
-                    ..self.veil
-                }),
-            );
         });
     }
 
