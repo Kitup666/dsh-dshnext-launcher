@@ -17,6 +17,7 @@
 - Shell 是 **Git Bash on Windows**，工作目录 `D:\DshDesk`
 - **`/tmp` 就是 `%TEMP%`**（`C:\Users\24453\AppData\Local\Temp`）。`nohup cmd > /tmp/x.log` 之后用 Python 读 `/tmp/x.log` 会 FileNotFound——Python 看的是真正的 POSIX 路径。写日志用 `"$TEMP/x.log"`，读的时候用完整 Windows 路径。
 - Rust 1.92.0 stable MSVC，edition 2024 可用
+- **机器级已配 sccache（2026-09-05）**：用户环境变量 `RUSTC_WRAPPER=C:\Users\24453\.cargo\bin\sccache.exe` + `CARGO_PROFILE_DEV_DEBUG=line-tables-only`。依赖 crate 编译结果跨项目共享，`cargo clean` 后重编从十几分钟降到一两分钟；debug 构建不再生成 GB 级 PDB。**新项目自动继承**，无需再配。看缓存命中 `sccache --show-stats`；缓存目录 `%LOCALAPPDATA%` 下默认上限 10 GB。若某次构建报找不到 rustc wrapper，是 setx 未被当前 shell 读到——重开终端。
 - Python 3.11.9，已装 `fonttools` `brotli` `pillow`
 - `phase0/tools/NotoSansSC-var.ttf`（17 MB 变体源字体）**在磁盘上但不入库**，别重新下载；下载地址在 `build_fonts.py` 头注释里
 
