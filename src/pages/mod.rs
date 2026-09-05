@@ -138,7 +138,9 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             Message::HoverEnter,
             Message::HoverExit,
         ),
-        row![sidebar(app, pal), main_area].width(Fill).height(Fill),
+        row![sidebar(app, pal), side_divider(pal), main_area]
+            .width(Fill)
+            .height(Fill),
     ]
     .width(Fill)
     .height(Fill);
@@ -306,6 +308,20 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
         snap: true,
     })
     .into()
+}
+
+/// 侧栏与主区之间的 1px 分隔线。两栏都透明、全靠环境光渐变区分，渐变淡出的
+/// 下半部（控制台/设置）会糊在一起；补一条 `border` 色细线分区，成本最低。
+fn side_divider<'a>(pal: &'static Palette) -> Element<'a, Message> {
+    container(space::Space::new().width(1.0).height(Fill))
+        .style(move |_theme: &Theme| container::Style {
+            text_color: None,
+            background: Some(pal.border.into()),
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: true,
+        })
+        .into()
 }
 
 fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<'a, Message> {

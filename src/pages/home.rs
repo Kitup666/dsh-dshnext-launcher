@@ -7,7 +7,7 @@ use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono, txt, txt_bold};
 use iced::widget::{Column, Row, column, container, row, space};
-use iced::{Alignment, Element, Fill, Length};
+use iced::{Alignment, Element, Fill};
 
 pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let pal = app.palette();
@@ -152,9 +152,9 @@ fn meta_strip<'a>(
         None => (format!("127.0.0.1:{} 待用", app.config.port), pal.text_3),
     };
 
-    // 每格固定宽度：内容自适应会让列间距参差（第一版就是这样，看着像没对齐）。
+    // 五列等宽（Fill + 固定 gap）：第一版按内容给固定宽度，列间距参差像没对齐。
     row![
-        meta_cell("状态", status, 130.0, pal),
+        meta_cell("状态", status, pal),
         meta_cell(
             "运行时长",
             txt_bold(
@@ -165,10 +165,9 @@ fn meta_strip<'a>(
             .size(FS_BODY)
             .color(pal.text)
             .into(),
-            150.0,
             pal
         ),
-        meta_cell("WEB 地址", mono(addr).size(FS_BODY).color(addr_color).into(), 190.0, pal),
+        meta_cell("WEB 地址", mono(addr).size(FS_BODY).color(addr_color).into(), pal),
         meta_cell(
             "进程 PID",
             // 有值走等宽（数字对齐），无值走正文——同一个破折号在两种字体下宽度不同，
@@ -177,16 +176,15 @@ fn meta_strip<'a>(
                 Some(p) => mono(p.pid.to_string()).size(FS_BODY).color(pal.text).into(),
                 None => txt_bold(DASH).size(FS_BODY).color(pal.text).into(),
             },
-            130.0,
             pal
         ),
         meta_cell(
             "插件",
             txt_bold(format!("{plugin_count} 个")).size(FS_BODY).color(pal.text).into(),
-            100.0,
             pal
         ),
     ]
+    .spacing(24)
     .align_y(Alignment::Start)
     .into()
 }
@@ -197,11 +195,10 @@ const DASH: &str = "—";
 fn meta_cell<'a>(
     label: &'static str,
     value: Element<'a, Message>,
-    width: f32,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     container(column![txt(label).size(FS_MICRO).color(pal.text_3), value].spacing(3))
-        .width(Length::Fixed(width))
+        .width(Fill)
         .into()
 }
 

@@ -84,7 +84,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         .align_y(Alignment::Center)
         .style(move |_theme: &Theme| container::Style {
             text_color: Some(pal.text_3),
-            background: Some(pal.input_bg.into()),
+            background: Some(pal.bg_log.into()),
             border: Border {
                 color: pal.border,
                 width: 0.3,
@@ -119,7 +119,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             .height(Fill)
             .style(move |_theme: &Theme| container::Style {
                 text_color: Some(pal.text_2),
-                background: Some(pal.input_bg.into()),
+                background: Some(pal.bg_log.into()),
                 border: Border {
                     color: pal.border,
                     width: 0.3,

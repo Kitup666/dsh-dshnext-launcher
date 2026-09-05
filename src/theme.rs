@@ -127,6 +127,10 @@ pub struct Palette {
     pub shadow_ctl: Shadow,
 
     pub input_bg: Color,
+
+    /// 控制台日志视口的底色。刻意比 `input_bg` 亮一档：纯黑在深底卡片里像
+    /// 「渲染破洞」而非终端面板（judge P1）。
+    pub bg_log: Color,
 }
 
 impl Palette {
@@ -201,6 +205,7 @@ impl Palette {
         },
 
         input_bg: rgb!(0x0a0a0c),
+        bg_log: rgb!(0x101014),
     };
 
     /// 对应 `:root[data-theme="light"]`：淡紫灰底 #f3f4fa + 白卡浮起。
@@ -269,6 +274,7 @@ impl Palette {
         },
 
         input_bg: Color::WHITE,
+        bg_log: rgb!(0xf2f3fa),
     };
 }
 

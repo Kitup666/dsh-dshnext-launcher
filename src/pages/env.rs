@@ -18,7 +18,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         "环境",
         "启动器在私有目录里托管运行时，与系统里的 Node / dsh 互不干扰。",
         Some(button::btn(
-            Spec::new("env.refresh", "重新检测", Variant::Secondary)
+            Spec::new("env.refresh", "重新检测", Variant::Primary)
                 .disabled(app.busy.is_some()),
             pal,
             &app.anim,

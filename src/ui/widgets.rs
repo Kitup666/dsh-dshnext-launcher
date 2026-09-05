@@ -183,7 +183,7 @@ pub fn empty<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     container(txt(text_).size(FS_BODY).color(pal.text_3))
         .width(Fill)
-        .padding(Padding::from([46, 24]))
+        .padding(Padding::from([30, 24]))
         .align_x(Alignment::Center)
         .into()
 }
