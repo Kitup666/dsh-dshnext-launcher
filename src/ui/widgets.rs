@@ -668,26 +668,3 @@ pub fn hoverable<'a, Message: Clone + 'a>(
     }
     ma.into()
 }
-
-/// 全窗颗粒层（假高斯模糊的一半）：随机噪点瓦片拉伸 2x 铺满背景，
-/// 半透明卡面（`pal.glass`）隔着卡底把它透上来 = 磨砂颗粒感。
-/// 必须放在环境光球**之后**、页面内容**之前**的 stack 层（`stack!` 对
-/// 第 2+ 个子项走 `with_layer`，层序即绘制序），文字在更上层不受污染。
-///
-/// Handle 全局单例（AGENTS.md 坑 27）：`from_bytes` 的 id 是 `Id::unique()`，
-/// 在 view() 里现造每次都是「新图」，缓存穿透。强度由 `pal.grain` 缩放
-/// alpha——亮色主题为 0，整层不可见（但仍占一次采样，忽略不计）。
-pub fn grain_overlay<Message: 'static>(pal: &'static Palette) -> Element<'static, Message> {
-    static HANDLE: std::sync::OnceLock<iced::widget::image::Handle> = std::sync::OnceLock::new();
-    let handle = HANDLE.get_or_init(|| {
-        iced::widget::image::Handle::from_bytes(
-            include_bytes!("../../assets/textures/grain.png").to_vec(),
-        )
-    });
-    iced::widget::image::Image::new(handle.clone())
-        .width(Fill)
-        .height(Fill)
-        // Image widget 自带 opacity（线性空间乘 alpha），不用复制纹理数据
-        .opacity(pal.grain)
-        .into()
-}

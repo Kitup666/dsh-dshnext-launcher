@@ -75,7 +75,9 @@ pub struct Palette {
     /// 假高斯模糊卡面：半透明冷灰，环境光球从底下透上来（2026-09-06 起
     /// 背景固定不再动画，透出的颜色恒定，不会闪）。实卡体感 ≈ surface_1。
     pub glass: Color,
-    /// 颗粒层整体强度（0..1），乘在 grain.png 的 alpha 上——调颗粒感只动这里。
+    /// 卡内颗粒不透明度（乘在 grain.png 瓦片 alpha 上，0 = 不画）。
+    /// 暗色 0.15：哑光 whisper——颗粒只做「磨砂微纹理」，重了就是噪声感
+    /// （2026-09-06 用户反馈：要磨砂感不要噪声感）。
     pub grain: f32,
     /// hover 叠加色（半透明），用 `lerp(TRANSPARENT, hover, t)` 做过渡。
     pub hover: Color,
@@ -156,7 +158,7 @@ impl Palette {
         // 假高斯模糊卡面：72% 实度的 surface_1，底下透出环境光球和颗粒层。
         // 0.72 是肉眼校的——再低文字对比开始吃亏，再高磨砂感出不来。
         glass: rgba!(0x18181a, 0.72),
-        grain: 1.0,
+        grain: 0.15,
         hover: rgba!(0xffffff, 0.04),
 
         border: rgba!(0xffffff, 0.06),

@@ -66,44 +66,7 @@ where
     ) {
         let bounds = layout.bounds();
         for spec in &self.specs {
-            // 顶点用 bounds 内的局部坐标（相对 bounds 左上角），draw_mesh
-            // 的 transformation 会搬到全局。圆心在窗外时外圈顶点跟着出去，
-            // 裁剪自然发生，扇形依旧闭合。
-            let (cx, cy) = (spec.center.x, spec.center.y);
-            let r = spec.radius;
-            let edge = Color { a: 0.0, ..spec.color };
-
-            // 圆心顶点（峰值色）+ SEGMENTS+1 个外圈顶点（全透明，首尾闭合）
-            let mut vertices: Vec<SolidVertex2D> =
-                Vec::with_capacity(SEGMENTS + 2);
-            let mut indices: Vec<u32> = Vec::with_capacity(SEGMENTS * 3);
-
-            vertices.push(SolidVertex2D {
-                position: [cx, cy],
-                color: mesh_pack(spec.color),
-            });
-
-            for i in 0..=SEGMENTS {
-                let t = i as f32 / SEGMENTS as f32;
-                let (sin, cos) = (t * std::f32::consts::TAU).sin_cos();
-                vertices.push(SolidVertex2D {
-                    position: [cx + cos * r, cy + sin * r],
-                    color: mesh_pack(edge),
-                });
-                if i > 0 {
-                    // 扇形：圆心(0) + 上一个外圈(i) + 当前外圈(i+1)
-                    indices.extend_from_slice(&[0, i as u32, i as u32 + 1]);
-                }
-            }
-
-            renderer.draw_mesh(Mesh::Solid {
-                buffers: Indexed { vertices, indices },
-                // 顶点已是 bounds 局部坐标；当前 layer 的 transformation
-                // 由 draw_mesh 自乘（layer.rs draw_mesh 负责叠加），这里给
-                // 恒等即可。clip 放宽到无穷：裁剪交给屏幕。
-                transformation: iced::Transformation::IDENTITY,
-                clip_bounds: bounds,
-            });
+            renderer.draw_mesh(build_orb(spec.center, spec.radius, spec.color, bounds));
         }
     }
 
@@ -123,6 +86,76 @@ where
 fn mesh_pack(c: Color) -> iced::advanced::graphics::color::Packed {
     iced::advanced::graphics::color::pack(c)
 }
+
+/// 建一颗光球的扇形网格。`center` 是**局部**坐标（相对调用方 bounds 左上角），
+/// `clip` 传调用方的 bounds。圆心在窗外时外圈顶点跟着出去，裁剪自然发生。
+pub fn build_orb(center: Point, radius: f32, color: Color, clip: Rectangle) -> Mesh {
+    let (cx, cy) = (center.x, center.y);
+    let edge = Color { a: 0.0, ..color };
+
+    // 圆心顶点（峰值色）+ SEGMENTS+1 个外圈顶点（全透明，首尾闭合）
+    let mut vertices: Vec<SolidVertex2D> = Vec::with_capacity(SEGMENTS + 2);
+    let mut indices: Vec<u32> = Vec::with_capacity(SEGMENTS * 3);
+
+    vertices.push(SolidVertex2D {
+        position: [cx, cy],
+        color: mesh_pack(color),
+    });
+
+    for i in 0..=SEGMENTS {
+        let t = i as f32 / SEGMENTS as f32;
+        let (sin, cos) = (t * std::f32::consts::TAU).sin_cos();
+        vertices.push(SolidVertex2D {
+            position: [cx + cos * radius, cy + sin * radius],
+            color: mesh_pack(edge),
+        });
+        if i > 0 {
+            // 扇形：圆心(0) + 上一个外圈(i) + 当前外圈(i+1)
+            indices.extend_from_slice(&[0, i as u32, i as u32 + 1]);
+        }
+    }
+
+    Mesh::Solid {
+        buffers: Indexed { vertices, indices },
+        // 顶点已是局部坐标；当前 layer 的 transformation 由 draw_mesh 自乘
+        // （layer.rs draw_mesh 负责叠加），恒等即可。
+        transformation: iced::Transformation::IDENTITY,
+        clip_bounds: clip,
+    }
+}
+
+/// 环境光双球的冻结参数（**窗口逻辑坐标** + 已含冻结相位脉动的颜色）：
+/// 背景 ambient() 与 Frosted 的伪造 backdrop 共用这一份——卡内画的是
+/// 同一对光球的柔化版，颜色随位置对应窗外背景，磨砂的「透」就是这么来的。
+pub fn ambient_specs(pal: &crate::theme::Palette) -> [(Point, f32, Color); 2] {
+    let clock = FROZEN_CLOCK;
+    let s = std::f32::consts::TAU;
+    let top_pulse = 1.0 + 0.15 * (clock * s / 16.0).sin();
+    let bot_pulse = 1.0 + 0.15 * (clock * s / 21.0 + 2.0).sin();
+    let top = crate::theme::with_alpha(pal.ambient_top, (pal.ambient_top.a * top_pulse).min(1.0));
+    let bot = crate::theme::with_alpha(pal.ambient_bot, (pal.ambient_bot.a * bot_pulse).min(1.0));
+    [
+        (
+            Point::new(
+                40.0 + 26.0 * (clock * s / 31.0).sin(),
+                30.0 + 18.0 * (clock * s / 23.0 + 0.8).sin(),
+            ),
+            520.0 * (1.0 + 0.05 * (clock * s / 19.0).sin()),
+            top,
+        ),
+        (
+            Point::new(
+                1240.0 + 30.0 * (clock * s / 37.0 + 2.1).sin(),
+                830.0 + 20.0 * (clock * s / 29.0 + 1.4).sin(),
+            ),
+            480.0 * (1.0 + 0.05 * (clock * s / 23.0 + 1.0).sin()),
+            bot,
+        ),
+    ]
+}
+
+/// 冻结相位：漂移版跑到约 40s 时的观感。pages::ambient 与本文件共用。
+pub const FROZEN_CLOCK: f32 = 40.0;
 
 impl<Message> From<Glow> for Element<'static, Message>
 where

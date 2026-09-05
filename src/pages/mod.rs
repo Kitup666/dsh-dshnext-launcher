@@ -10,7 +10,7 @@ pub mod profiles;
 pub mod settings;
 
 use crate::app::{Dshnext, Message};
-use crate::theme::{self, with_alpha, FS_BODY, FS_MICRO, FS_TINY, FS_TITLE, Palette};
+use crate::theme::{self, FS_BODY, FS_MICRO, FS_TINY, FS_TITLE, Palette};
 use crate::ui::anim;
 use crate::ui::glow_mesh;
 use crate::ui::icon;
@@ -148,11 +148,9 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     .width(Fill)
     .height(Fill);
 
-    // 环境光最底层，颗粒层夹中间（假高斯模糊：半透明卡面把它透上来），
-    // 页面内容在上。stack! 对第 2+ 子项走 with_layer，层序即绘制序。
-    let with_ambient = stack![ambient(pal), widgets::grain_overlay(pal), inner]
-        .width(Fill)
-        .height(Fill);
+    // 环境光在最底层（背景要干净：颗粒只属于卡片，不铺全窗——用户指出
+    // 「颗粒泄露到背景」，2026-09-06 撤）。
+    let with_ambient = stack![ambient(pal), inner].width(Fill).height(Fill);
 
     let shell = container(with_ambient)
         .width(Fill)
@@ -199,40 +197,20 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 /// 的 Mesh::Solid 扇形顶点（公开 API）。中间大面积留干净。
 ///
 /// **背景已冻结**（2026-09-06 用户定）：慢漂移跑了半天谁也没看出来在动，
-/// 白付 15fps 常驻出帧的代价——「空闲零出帧」纪律恢复，相位固定在
-/// FROZEN_CLOCK（当时的观感恰好不错），圆心/半径/亮度全部恒定。
-/// 冻结相位：漂移版跑到约 40s 时的观感（圆心略偏、脉动过峰），取那个瞬间定住。
-const FROZEN_CLOCK: f32 = 40.0;
-
+/// 白付 15fps 常驻出帧的代价——「空闲零出帧」纪律恢复。光球参数由
+/// `glow_mesh::ambient_specs` 统一供给（Frosted 的伪造 backdrop 共用同一
+/// 份，卡内颜色随位置对应窗外背景，磨砂的「透」才成立）。
 fn ambient(pal: &'static Palette) -> Element<'static, Message> {
-    let clock = FROZEN_CLOCK;
-    let s = std::f32::consts::TAU;
-    // 左上主辉（靛紫）：圆心在窗外一点点，让光晕像从窗外打进来
-    let top_cx = 40.0 + 26.0 * (clock * s / 31.0).sin();
-    let top_cy = 30.0 + 18.0 * (clock * s / 23.0 + 0.8).sin();
-    let top_r = 520.0 * (1.0 + 0.05 * (clock * s / 19.0).sin());
-    let top_pulse = 1.0 + 0.15 * (clock * s / 16.0).sin();
-    let top_col = with_alpha(pal.ambient_top, (pal.ambient_top.a * top_pulse).min(1.0));
-
-    // 右下回暖（海军蓝）
-    let bot_cx = 1240.0 + 30.0 * (clock * s / 37.0 + 2.1).sin();
-    let bot_cy = 830.0 + 20.0 * (clock * s / 29.0 + 1.4).sin();
-    let bot_r = 480.0 * (1.0 + 0.05 * (clock * s / 23.0 + 1.0).sin());
-    let bot_pulse = 1.0 + 0.15 * (clock * s / 21.0 + 2.0).sin();
-    let bot_col = with_alpha(pal.ambient_bot, (pal.ambient_bot.a * bot_pulse).min(1.0));
-
-    glow_mesh::glow_layer(vec![
-        glow_mesh::GlowSpec {
-            center: iced::Point::new(top_cx, top_cy),
-            radius: top_r,
-            color: top_col,
-        },
-        glow_mesh::GlowSpec {
-            center: iced::Point::new(bot_cx, bot_cy),
-            radius: bot_r,
-            color: bot_col,
-        },
-    ])
+    glow_mesh::glow_layer(
+        glow_mesh::ambient_specs(pal)
+            .into_iter()
+            .map(|(center, radius, color)| glow_mesh::GlowSpec {
+                center,
+                radius,
+                color,
+            })
+            .collect(),
+    )
 }
 
 fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
