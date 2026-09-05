@@ -72,6 +72,11 @@ pub struct Palette {
     pub surface_1: Color,
     pub surface_2: Color,
     pub surface_3: Color,
+    /// 假高斯模糊卡面：半透明冷灰，环境光球从底下透上来（2026-09-06 起
+    /// 背景固定不再动画，透出的颜色恒定，不会闪）。实卡体感 ≈ surface_1。
+    pub glass: Color,
+    /// 颗粒层整体强度（0..1），乘在 grain.png 的 alpha 上——调颗粒感只动这里。
+    pub grain: f32,
     /// hover 叠加色（半透明），用 `lerp(TRANSPARENT, hover, t)` 做过渡。
     pub hover: Color,
 
@@ -148,6 +153,10 @@ impl Palette {
         surface_1: rgb!(0x18181a),
         surface_2: rgb!(0x232325),
         surface_3: rgb!(0x262728),
+        // 假高斯模糊卡面：72% 实度的 surface_1，底下透出环境光球和颗粒层。
+        // 0.72 是肉眼校的——再低文字对比开始吃亏，再高磨砂感出不来。
+        glass: rgba!(0x18181a, 0.72),
+        grain: 1.0,
         hover: rgba!(0xffffff, 0.04),
 
         border: rgba!(0xffffff, 0.06),
@@ -222,6 +231,9 @@ impl Palette {
         surface_1: Color::WHITE,
         surface_2: rgb!(0xf7f8fd),
         surface_3: rgb!(0xeef0f9),
+        // 亮色没有环境光球可透，磨砂没意义：glass 直接给实度白，颗粒层也关。
+        glass: Color::WHITE,
+        grain: 0.0,
         hover: rgba!(0x28306e, 0.04),
 
         border: rgba!(0x1e2350, 0.07),

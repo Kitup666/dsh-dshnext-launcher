@@ -26,6 +26,7 @@ pub fn card<'a, Message: 'a>(
 }
 
 /// 英雄卡：比 `card()` 高一档（更大圆角 + 更宽内边距 + 更深阴影）。
+/// 暗色用 `pal.glass`（半透明，假高斯模糊：透出底下环境光球和颗粒层）。
 pub fn card_hero<'a, Message: 'a>(
     content: impl Into<Element<'a, Message>>,
     pal: &'static Palette,
@@ -35,7 +36,7 @@ pub fn card_hero<'a, Message: 'a>(
         .padding(Padding::from(32))
         .style(move |_theme: &Theme| container::Style {
             text_color: Some(pal.text),
-            background: Some(pal.surface_1.into()),
+            background: Some(pal.glass.into()),
             border: Border {
                 color: pal.card_border,
                 width: 0.3,
@@ -67,9 +68,9 @@ pub fn card_style(
 ) -> impl Fn(&Theme) -> container::Style + Copy + 'static {
     move |_theme: &Theme| container::Style {
         text_color: Some(pal.text),
-        background: Some(pal.surface_1.into()),
-        // 暗色：1px 白描边勾轮廓（黑底上黑阴影不可见，借鉴 orevx）；
-        // 亮色：card_border 为 transparent，维持白卡 + 阴影浮起。
+        // 暗色：半透明 glass（假高斯模糊）+ 1px 白描边勾轮廓（黑底上黑阴影
+        // 不可见，借鉴 orevx）；亮色：glass=白，维持白卡 + 阴影浮起。
+        background: Some(pal.glass.into()),
         border: Border {
             color: pal.card_border,
             width: 0.3,

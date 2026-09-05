@@ -148,8 +148,9 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     .width(Fill)
     .height(Fill);
 
-    // 环境光在最底层，铺满含标题栏（orevx 是挂在 html 背景上、整页共享）。
-    let with_ambient = stack![ambient(pal, app.ambient_clock), inner]
+    // 环境光最底层，颗粒层夹中间（假高斯模糊：半透明卡面把它透上来），
+    // 页面内容在上。stack! 对第 2+ 子项走 with_layer，层序即绘制序。
+    let with_ambient = stack![ambient(pal), widgets::grain_overlay(pal), inner]
         .width(Fill)
         .height(Fill);
 
@@ -196,10 +197,15 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 /// 环境光：**左上、右下两个径向球圆光晕**（真圆，不是线性拼的楔形）。
 /// iced 0.14 没有径向渐变（gradient.rs 标 TBD），这里走 `ui::glow_mesh`
 /// 的 Mesh::Solid 扇形顶点（公开 API）。中间大面积留干净。
-/// 慢漂移：圆心 ±12px 椭圆漫游（31s/37s 错相）、半径 ±5%（19s/23s）、
-/// 峰值亮度脉动 ±15%（16s/21s）——周期互质，不显机械。
-/// AmbientTick@15fps 推进 `ambient_clock`，失焦即冻结。亮色全 transparent。
-fn ambient(pal: &'static Palette, clock: f32) -> Element<'static, Message> {
+///
+/// **背景已冻结**（2026-09-06 用户定）：慢漂移跑了半天谁也没看出来在动，
+/// 白付 15fps 常驻出帧的代价——「空闲零出帧」纪律恢复，相位固定在
+/// FROZEN_CLOCK（当时的观感恰好不错），圆心/半径/亮度全部恒定。
+/// 冻结相位：漂移版跑到约 40s 时的观感（圆心略偏、脉动过峰），取那个瞬间定住。
+const FROZEN_CLOCK: f32 = 40.0;
+
+fn ambient(pal: &'static Palette) -> Element<'static, Message> {
+    let clock = FROZEN_CLOCK;
     let s = std::f32::consts::TAU;
     // 左上主辉（靛紫）：圆心在窗外一点点，让光晕像从窗外打进来
     let top_cx = 40.0 + 26.0 * (clock * s / 31.0).sin();
@@ -356,11 +362,12 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
 
     // 底色/描边按 act 插值。**描边色不能用半透明白往里插**（DESIGN.md §7.5 第 15 条：
     // 物理混色会把带色相的半透明放大），这里 card_border 本身就是中性白，安全。
+    // 选中底用 glass（半透明，和卡片一致的假高斯模糊）；透明插透明无碍。
     let bg = theme::lerp(
-        // 未选中时的底是 hover 叠色，选中时是 surface_1。两者都要参与：
+        // 未选中时的底是 hover 叠色，选中时是 glass。两者都要参与：
         // 悬停着切页时不插 hover 会先闪回透明。
         theme::lerp(Color::TRANSPARENT, pal.hover, t),
-        pal.surface_1,
+        pal.glass,
         act,
     );
     let border_c = theme::with_alpha(pal.card_border, pal.card_border.a * act);
