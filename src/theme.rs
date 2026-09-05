@@ -112,6 +112,8 @@ pub struct Palette {
     /// 亮色为 transparent（无环境光）。
     pub ambient_top: Color,
     pub ambient_mid: Color,
+    /// 环境光底部回暖档：渐变中段收干净后，页底再起一档淡蓝（双辉）。
+    pub ambient_bot: Color,
 
     /// 卡片浮起：CSS `0 20px 40px -24px`。iced 的 Shadow 没有 spread，
     /// 负 spread 的收缩效果靠调小 blur 找回（40 → 30，阶段 0 验证观感等价）。
@@ -176,6 +178,7 @@ impl Palette {
         // orevx: linear-gradient(#195eb429 0%, #005e500a 50%, transparent 100%)
         ambient_top: rgba!(0x195eb4, 0.16),
         ambient_mid: rgba!(0x005e50, 0.04),
+        ambient_bot: rgba!(0x195eb4, 0.10),
 
         // 暗色阴影弱化：轮廓交给 card_border，阴影只留一点深度感。
         shadow_card: Shadow {
@@ -246,6 +249,7 @@ impl Palette {
 
         ambient_top: Color::TRANSPARENT,
         ambient_mid: Color::TRANSPARENT,
+        ambient_bot: Color::TRANSPARENT,
 
         shadow_card: Shadow {
             color: rgba!(0x181e50, 0.14),

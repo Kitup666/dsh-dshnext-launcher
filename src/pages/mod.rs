@@ -190,30 +190,27 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     .into()
 }
 
-/// 顶部环境光渐变带：蓝 → 青 → 透明，高 300px（含标题栏）。
-/// 亮色两档都 transparent，整条带子不可见，零成本。
+/// 环境光渐变：顶部蓝辉 → 中段收净 → 页底回暖一档淡蓝（双辉），铺满整窗。
+/// 注意容器必须独占 Fill——曾经下面垫过一个 space::vertical()，两个 Fill 平分
+/// 高度，渐变只铺了上半窗（用户指出下半页平黑后才量出来）。亮色全 transparent。
 fn ambient(pal: &'static Palette) -> Element<'static, Message> {
-    column![
-        container(space::Space::new())
-            .width(Fill)
-            .height(300.0)
-            .style(move |_theme: &Theme| container::Style {
-                text_color: None,
-                background: Some(iced::Background::Gradient(iced::Gradient::Linear(
-                    iced::gradient::Linear::new(std::f32::consts::PI)
-                        .add_stop(0.0, pal.ambient_top)
-                        .add_stop(0.5, pal.ambient_mid)
-                        .add_stop(1.0, Color::TRANSPARENT),
-                ))),
-                border: Border::default(),
-                shadow: Shadow::default(),
-                snap: true,
-            }),
-        space::vertical(),
-    ]
-    .width(Fill)
-    .height(Fill)
-    .into()
+    container(space::Space::new())
+        .width(Fill)
+        .height(Fill)
+        .style(move |_theme: &Theme| container::Style {
+            text_color: None,
+            background: Some(iced::Background::Gradient(iced::Gradient::Linear(
+                iced::gradient::Linear::new(std::f32::consts::PI)
+                    .add_stop(0.0, pal.ambient_top)
+                    .add_stop(0.35, pal.ambient_mid)
+                    .add_stop(0.7, Color::TRANSPARENT)
+                    .add_stop(1.0, pal.ambient_bot),
+            ))),
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: true,
+        })
+        .into()
 }
 
 fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
