@@ -109,6 +109,8 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
                 .width(Fill)
                 .padding(Padding::from(44).top(28)),
         )
+        .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
+        .style(widgets::slim_scroll_style(pal))
         .width(Fill)
         .height(Fill)
         .into()

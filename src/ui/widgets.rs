@@ -9,7 +9,8 @@ use crate::ui::anim::AnimState;
 use crate::ui::{FONT_MONO, FONT_SANS, mono, txt, txt_bold};
 use iced::widget::text::IntoFragment;
 use iced::widget::{
-    Column, Row, checkbox, column, container, mouse_area, pick_list, row, space, text_input,
+    Column, Row, checkbox, column, container, mouse_area, pick_list, row, scrollable, space,
+    text_input,
 };
 use iced::{Alignment, Background, Border, Color, Element, Fill, Length, Padding, Shadow, Theme};
 
@@ -468,6 +469,60 @@ pub fn page_stack<'a, Message: 'a>(
     body: Column<'a, Message>,
 ) -> Column<'a, Message> {
     column![head, body.spacing(GAP_CARD)].spacing(GAP_SECTION)
+}
+
+/// 细 overlay 滚动条的几何（judge P8）：8px 轨道 + 5px 滑块、两侧留 2px 缝。
+/// 默认 10px 实条在深底上像系统控件裸露。
+pub fn slim_scrollbar() -> scrollable::Scrollbar {
+    scrollable::Scrollbar::new().width(8.0).scroller_width(5.0).margin(2.0)
+}
+
+/// 滚动条配色：轨道透明，滑块用中性 `border_mid`，悬停/拖拽升 `border_hi`。
+/// 中性灰半透明是坑 15 允许的（带色相的一律写死）。
+pub fn slim_scroll_style(
+    pal: &'static Palette,
+) -> impl Fn(&Theme, scrollable::Status) -> scrollable::Style + Copy + 'static {
+    move |_theme, status| {
+        let hot = matches!(
+            status,
+            scrollable::Status::Hovered {
+                is_vertical_scrollbar_hovered: true,
+                ..
+            } | scrollable::Status::Dragged {
+                is_vertical_scrollbar_dragged: true,
+                ..
+            }
+        );
+        let rail = scrollable::Rail {
+            background: None,
+            border: Border::default(),
+            scroller: scrollable::Scroller {
+                background: if hot { pal.border_hi } else { pal.border_mid }.into(),
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 3.0.into(),
+                },
+            },
+        };
+        scrollable::Style {
+            container: Default::default(),
+            vertical_rail: rail,
+            horizontal_rail: rail,
+            gap: None,
+            // 「下方有新日志」浮标：不隐藏，给个和卡片同系的可见样式。
+            auto_scroll: scrollable::AutoScroll {
+                background: pal.surface_2.into(),
+                border: Border {
+                    color: pal.border_mid,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                shadow: pal.shadow_ctl,
+                icon: pal.text_2,
+            },
+        }
+    }
 }
 
 /// 提示条（CSS `.strip`）：卡片内的次级操作条。

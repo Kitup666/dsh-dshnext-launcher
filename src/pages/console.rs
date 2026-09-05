@@ -109,6 +109,8 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         }
 
         let sc = scrollable(container(lines).width(Fill).padding(Padding::from([12, 16])))
+            .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
+            .style(widgets::slim_scroll_style(pal))
             .width(Fill)
             .height(Fill);
         // 自动滚动：0.14 新增的 auto_scroll 正是「内容增长时跟随尾部」，

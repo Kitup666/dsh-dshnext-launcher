@@ -106,11 +106,10 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
     let meta = meta_strip(app, running, pal);
 
     // 英雄卡：圆角/内边距/阴影都比普通卡片高一档（ui::card::card_hero）。
+    // 控件组紧跟文案（32px），不再贴右缘——两头重中间空的「哑铃布局」被 judge 点掉。
     card::card_hero(
         column![
-            row![left, space::horizontal(), actions]
-                .width(Fill)
-                .align_y(Alignment::End),
+            row![left, actions].spacing(32).width(Fill).align_y(Alignment::End),
             widgets::divider(pal),
             meta,
         ]

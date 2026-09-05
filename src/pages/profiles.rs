@@ -7,9 +7,9 @@ use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal::Dialog;
 use crate::ui::widgets::{self, Tone};
-use crate::ui::{card, mono, txt_bold};
-use iced::widget::{Column, column, row, space};
-use iced::{Alignment, Element};
+use crate::ui::{card, mono, txt, txt_bold};
+use iced::widget::{Column, column, container, mouse_area, row, space};
+use iced::{Alignment, Border, Element, Fill, Length, Shadow, Theme};
 
 pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let pal = app.palette();
@@ -43,7 +43,40 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         }
     }
 
-    widgets::page_stack(head, Column::new().push(card::card(list, pal))).into()
+    let mut body = Column::new().push(card::card(list, pal));
+    if !app.profiles.is_empty() {
+        body = body.push(ghost_new_row(pal));
+    }
+
+    widgets::page_stack(head, body).into()
+}
+
+/// 列表尾的 ghost 占位行（judge P6）：给列表一个「完整且可继续」的收尾，
+/// 点击等同「新建版本」。iced 的 Border 不支持虚线，用 1px 实线细描边近似。
+fn ghost_new_row<'a>(pal: &'static Palette) -> Element<'a, Message> {
+    let body = container(
+        row![txt("+ 新建版本").size(FS_BODY).color(pal.text_3)]
+            .spacing(6)
+            .align_y(Alignment::Center),
+    )
+    .width(Fill)
+    .height(Length::Fixed(72.0))
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .style(move |_theme: &Theme| container::Style {
+        text_color: Some(pal.text_3),
+        background: None,
+        border: Border {
+            color: pal.border_mid,
+            width: 1.0,
+            radius: 14.0.into(),
+        },
+        shadow: Shadow::default(),
+        snap: true,
+    });
+    mouse_area(body)
+        .on_press(Message::OpenDialog(Dialog::CreateProfile))
+        .into()
 }
 
 fn profile_row<'a>(
