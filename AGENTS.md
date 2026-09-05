@@ -87,6 +87,7 @@
 24. **入场位移用 `renderer.with_translation`，不要动 padding/height。** 后者每帧重新布局（设置页六张卡整树重排），前者只影响 draw、布局逐帧复用。也不要用 `Transformation::scale`：会连文字一起缩，cosmic-text 非整数缩放要么每帧重栅格化要么拉伸图集，本来就没 hinting 的中文会更糊。
 25. **要在动画中途截图，光靠 `--shot --after` 不行**——落定态永远是它截到的样子。加了 `--switch-to <页> --switch-at <毫秒>`：开窗后定时切页，`--after` 与它的差就是快门落在过渡的第几毫秒。
 26. **`AnimState::animate_to` 起不了「重播」。** 它从当前值出发，而上一次入场落定后当前值已等于目标值，再调等于什么都不动。切页入场要用 `restart(key, from, to, dur, now)` 强制从头跑。补间方向刻意写成 **1 = 刚切、0 = 落定**：`value()` 对无记录的 key 返回 0.0，正好是落定态，冷启动和 `--page` 出图都不必预置初值。
+27. **`image::Handle::from_bytes` 的 id 是 `Id::unique()`，在 `view()` 里现造 = 每次都是「新图」**，缓存穿透 → 悬停任何按钮触发 view 重建时头像闪烁。内嵌位图要用 `OnceLock` 把 Handle 存成全局单例（`brand_handle()`）。SVG 的 `from_memory` 没这个问题——它的 id 按内容 hash（`iced_core/src/svg.rs`），`&'static [u8]` 天然稳定，所以界面图标可以直接现造。
 
 ## 后端复用（core/，抄自第一代）
 

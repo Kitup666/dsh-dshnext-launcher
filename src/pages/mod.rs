@@ -220,11 +220,12 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     let brand = row![
         // 品牌头像：与 exe 图标同源的插画。圆角烘在 PNG 的 alpha 里（image
         // widget 本身不支持圆角），角上透出的是环境光渐变，不是黑块。
-        iced::widget::image::Image::new(iced::widget::image::Handle::from_bytes(
-            include_bytes!("../../assets/icons/brand.png").to_vec(),
-        ))
-        .width(Length::Fixed(34.0))
-        .height(Length::Fixed(34.0)),
+        // Handle 必须全局单例：image::Handle::from_bytes 的 id 是 Id::unique()，
+        // 在 view() 里现造会每次都变成「新图」，缓存穿透导致悬停时闪烁
+        // （svg 的 from_memory 按内容 hash 没这个问题，见 AGENTS.md 坑 27）。
+        iced::widget::image::Image::new(brand_handle())
+            .width(Length::Fixed(34.0))
+            .height(Length::Fixed(34.0)),
         column![
             txt_bold("DshDesk").size(FS_TITLE).color(pal.text),
             txt("DeepSeek Harness 启动器").size(FS_MICRO).color(pal.text_3),
@@ -295,6 +296,18 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
         snap: true,
     })
     .into()
+}
+
+/// 品牌头像的图片句柄，进程内只建一次（见上，view() 里现造会缓存穿透闪烁）。
+fn brand_handle() -> iced::widget::image::Handle {
+    static HANDLE: std::sync::OnceLock<iced::widget::image::Handle> = std::sync::OnceLock::new();
+    HANDLE
+        .get_or_init(|| {
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../../assets/icons/brand.png").to_vec(),
+            )
+        })
+        .clone()
 }
 
 /// 侧栏与主区之间的 1px 分隔线。两栏都透明、全靠环境光渐变区分，渐变淡出的
