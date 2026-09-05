@@ -190,9 +190,11 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     .into()
 }
 
-/// 环境光渐变：顶部蓝辉 → 中段收净 → 页底回暖一档淡蓝（双辉），铺满整窗。
+/// 环境光渐变：**对角线**左上辉 → 中段收净 → 右下回暖（双辉），铺满整窗。
+/// iced 的角度换算：方向向量 = (cos(θ-π/2), sin(θ-π/2))，屏幕 y 向下。
+/// 要左上→右下对角（方向 ≈ atan2(h,w)≈34°），θ = 34°+90° ≈ 124°。
 /// 注意容器必须独占 Fill——曾经下面垫过一个 space::vertical()，两个 Fill 平分
-/// 高度，渐变只铺了上半窗（用户指出下半页平黑后才量出来）。亮色全 transparent。
+/// 高度，渐变只铺了半窗（量亮度 (5,6,6) 纹丝不动才暴露）。亮色全 transparent。
 fn ambient(pal: &'static Palette) -> Element<'static, Message> {
     container(space::Space::new())
         .width(Fill)
@@ -200,10 +202,10 @@ fn ambient(pal: &'static Palette) -> Element<'static, Message> {
         .style(move |_theme: &Theme| container::Style {
             text_color: None,
             background: Some(iced::Background::Gradient(iced::Gradient::Linear(
-                iced::gradient::Linear::new(std::f32::consts::PI)
+                iced::gradient::Linear::new(iced::Degrees(124.0))
                     .add_stop(0.0, pal.ambient_top)
-                    .add_stop(0.35, pal.ambient_mid)
-                    .add_stop(0.7, Color::TRANSPARENT)
+                    .add_stop(0.3, pal.ambient_mid)
+                    .add_stop(0.6, Color::TRANSPARENT)
                     .add_stop(1.0, pal.ambient_bot),
             ))),
             border: Border::default(),

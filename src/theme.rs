@@ -108,11 +108,12 @@ pub struct Palette {
     pub bad: Color,
     pub bad_soft: Color,
 
-    /// 页面顶部环境光渐变（借鉴 orevx：蓝 → 青 → 透明）。
+    /// 环境光对角渐变（左上辉 → 右下回暖，借鉴 orevx 但改斜角）。
+    /// 靛紫系而不是纯蓝——蓝紫过渡比蓝青更「贵」。
     /// 亮色为 transparent（无环境光）。
     pub ambient_top: Color,
     pub ambient_mid: Color,
-    /// 环境光底部回暖档：渐变中段收干净后，页底再起一档淡蓝（双辉）。
+    /// 渐变中段收净后，右下角再回暖一档深海军蓝（双辉）。
     pub ambient_bot: Color,
 
     /// 卡片浮起：CSS `0 20px 40px -24px`。iced 的 Shadow 没有 spread，
@@ -176,9 +177,9 @@ impl Palette {
         bad_soft: rgba!(0xf0616d, 0.13),
 
         // orevx: linear-gradient(#195eb429 0%, #005e500a 50%, transparent 100%)
-        ambient_top: rgba!(0x195eb4, 0.16),
-        ambient_mid: rgba!(0x005e50, 0.04),
-        ambient_bot: rgba!(0x195eb4, 0.10),
+        ambient_top: rgba!(0x4f46e5, 0.17),
+        ambient_mid: rgba!(0x7c5cd6, 0.05),
+        ambient_bot: rgba!(0x1e3a8a, 0.13),
 
         // 暗色阴影弱化：轮廓交给 card_border，阴影只留一点深度感。
         shadow_card: Shadow {
