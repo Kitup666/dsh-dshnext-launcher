@@ -70,6 +70,13 @@ pub struct Dshnext {
     pub autotest: bool,
     pub e2e: bool,
     pub maximized: bool,
+    /// 环境光漂移的累计秒数。**只在窗口持有焦点时累加**（订阅按 focused 挂/卸，
+    /// 失焦即冻结，回来从冻结处继续）——「空闲零出帧」为它开的第一处豁免。
+    pub ambient_clock: f32,
+    /// 上一帧环境光心跳的时间戳，算 dt 用。
+    pub ambient_last: Option<Instant>,
+    /// 窗口是否持有焦点。失焦时卸掉环境光心跳订阅，GPU 归于沉睡。
+    pub focused: bool,
 
     // ---- 导航与浮层 ----
     pub page: Page,
@@ -138,6 +145,10 @@ pub enum Message {
     Minimize,
     ToggleMaximize,
     MaximizedChanged(bool),
+    /// 窗口焦点变化。失焦即冻结环境光心跳（卸订阅），回窗再续。
+    FocusChanged(bool),
+    /// 环境光心跳（15fps，仅持有焦点时挂载）：推进 ambient_clock。
+    AmbientTick(Instant),
     Close,
     Resize(window::Direction),
 
@@ -230,6 +241,9 @@ impl Dshnext {
             autotest,
             e2e,
             maximized: false,
+            ambient_clock: 0.0,
+            ambient_last: None,
+            focused: true,
 
             page: Page::Home,
             prev_page: None,

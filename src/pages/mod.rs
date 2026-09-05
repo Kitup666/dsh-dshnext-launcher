@@ -10,7 +10,7 @@ pub mod profiles;
 pub mod settings;
 
 use crate::app::{Dshnext, Message};
-use crate::theme::{self, FS_BODY, FS_MICRO, FS_TINY, FS_TITLE, Palette};
+use crate::theme::{self, with_alpha, FS_BODY, FS_MICRO, FS_TINY, FS_TITLE, Palette};
 use crate::ui::anim;
 use crate::ui::icon;
 use crate::ui::modal;
@@ -148,7 +148,9 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     .height(Fill);
 
     // 环境光在最底层，铺满含标题栏（orevx 是挂在 html 背景上、整页共享）。
-    let with_ambient = stack![ambient(pal), inner].width(Fill).height(Fill);
+    let with_ambient = stack![ambient(pal, app.ambient_clock), inner]
+        .width(Fill)
+        .height(Fill);
 
     let shell = container(with_ambient)
         .width(Fill)
@@ -191,22 +193,39 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 }
 
 /// 环境光渐变：**对角线**左上辉 → 中段收净 → 右下回暖（双辉），铺满整窗。
+/// 慢漂移：角度 ±5°（24s 周期）、收净点呼吸 ±0.03（13s）、底部回暖起点
+/// ±0.03（17s）——三个周期互质错开，不显机械。
+/// 由 AmbientTick@15fps 推进 `ambient_clock`，失焦即冻结。正弦无起止，
+/// 不需要 anim::restart 那套补间——直接读钟算相位就行。
 /// iced 的角度换算：方向向量 = (cos(θ-π/2), sin(θ-π/2))，屏幕 y 向下。
-/// 要左上→右下对角（方向 ≈ atan2(h,w)≈34°），θ = 34°+90° ≈ 124°。
+/// 基准 124° = 左上→右下对角（方向 ≈ atan2(h,w)≈34°）。
 /// 注意容器必须独占 Fill——曾经下面垫过一个 space::vertical()，两个 Fill 平分
 /// 高度，渐变只铺了半窗（量亮度 (5,6,6) 纹丝不动才暴露）。亮色全 transparent。
-fn ambient(pal: &'static Palette) -> Element<'static, Message> {
+fn ambient(pal: &'static Palette, clock: f32) -> Element<'static, Message> {
+    let angle = 124.0 + 5.0 * (clock * std::f32::consts::TAU / 24.0).sin();
+    // 呼吸只叠加在收净点上（±0.03），辉光整体形状与中段留白不变
+    let breathe = 0.03 * (clock * std::f32::consts::TAU / 13.0 + 1.7).sin();
+    let bot_start = 0.75 + 0.03 * (clock * std::f32::consts::TAU / 17.0).sin();
+    // 辉光核心的亮度脉动（±15%）：渐变线两端在窗外被截断成恒定区，
+    // 只摆角度的话核心永远不动；alpha 脉动让左上/右下也跟着明暗。
+    let pulse_top = 1.0 + 0.15 * (clock * std::f32::consts::TAU / 16.0).sin();
+    let pulse_bot = 1.0 + 0.15 * (clock * std::f32::consts::TAU / 19.0 + 2.0).sin();
+    let top = with_alpha(pal.ambient_top, (pal.ambient_top.a * pulse_top).min(1.0));
+    let bot = with_alpha(pal.ambient_bot, (pal.ambient_bot.a * pulse_bot).min(1.0));
     container(space::Space::new())
         .width(Fill)
         .height(Fill)
         .style(move |_theme: &Theme| container::Style {
             text_color: None,
             background: Some(iced::Background::Gradient(iced::Gradient::Linear(
-                iced::gradient::Linear::new(iced::Degrees(124.0))
-                    .add_stop(0.0, pal.ambient_top)
-                    .add_stop(0.3, pal.ambient_mid)
-                    .add_stop(0.6, Color::TRANSPARENT)
-                    .add_stop(1.0, pal.ambient_bot),
+                iced::gradient::Linear::new(iced::Degrees(angle))
+                    .add_stop(0.0, top)
+                    .add_stop(0.14 + breathe * 0.5, pal.ambient_mid)
+                    .add_stop(0.3 + breathe, Color::TRANSPARENT)
+                    // 中段刻意留白：第二个透明点把底部回暖压到后 1/4 才起，
+                    // 否则线性插值会让辉光从 0.3 就开始爬，整窗都被染色。
+                    .add_stop(bot_start, Color::TRANSPARENT)
+                    .add_stop(1.0, bot),
             ))),
             border: Border::default(),
             shadow: Shadow::default(),

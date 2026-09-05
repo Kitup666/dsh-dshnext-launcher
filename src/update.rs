@@ -15,7 +15,10 @@ impl Dshnext {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         // 交互链路取证：--e2e / 手动点击时用 RUST_LOG=dshnext=debug 看消息是否到达。
         // Tick 与 ToastTick 是高频的，排除掉免得把日志冲掉。
-        if !matches!(message, Message::Tick(_) | Message::ToastTick(_)) {
+        if !matches!(
+            message,
+            Message::Tick(_) | Message::ToastTick(_) | Message::AmbientTick(_)
+        ) {
             log::debug!("msg {message:?}");
         }
         match message {
@@ -99,6 +102,24 @@ impl Dshnext {
             },
             Message::MaximizedChanged(v) => {
                 self.maximized = v;
+                Task::none()
+            }
+            Message::FocusChanged(f) => {
+                self.focused = f;
+                Task::none()
+            }
+            Message::AmbientTick(now) => {
+                // 慢漂移：不追帧，dt 夹到 0.2s——失焦冻结回来后的第一个 tick
+                // 不许把相位一口跳过去。未聚焦时只刷新时间戳不累加（此时订阅
+                // 其实已卸载，这条是保险）。
+                let dt = match self.ambient_last {
+                    Some(t) => (now - t).as_secs_f32().min(0.2),
+                    None => 0.0,
+                };
+                self.ambient_last = Some(now);
+                if self.focused {
+                    self.ambient_clock += dt;
+                }
                 Task::none()
             }
             Message::Close => match self.window {
@@ -738,6 +759,16 @@ impl Dshnext {
             window::open_events().map(Message::Opened),
             bridge::events().map(Message::Core),
             iced::event::listen_with(|event, _status, _id| {
+                // 焦点跟踪：失焦冻结环境光（订阅侧卸心跳计时器）
+                match &event {
+                    iced::Event::Window(iced::window::Event::Focused) => {
+                        return Some(Message::FocusChanged(true))
+                    }
+                    iced::Event::Window(iced::window::Event::Unfocused) => {
+                        return Some(Message::FocusChanged(false))
+                    }
+                    _ => {}
+                }
                 let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                     key, modifiers, ..
                 }) = event
@@ -772,6 +803,14 @@ impl Dshnext {
             // toast 到期检查：500ms 够了，不需要逐帧。
             subs.push(
                 iced::time::every(TOAST_TTL / 8).map(|_| Message::ToastTick(Instant::now())),
+            );
+        }
+        if self.focused {
+            // 环境光慢漂移心跳：15fps 驱动足够（20s 周期每帧变化 <0.1°）。
+            // 失焦时订阅整个卸掉——不产消息、不出帧，GPU 回到深度睡眠。
+            subs.push(
+                iced::time::every(Duration::from_millis(66))
+                    .map(|_| Message::AmbientTick(Instant::now())),
             );
         }
         Subscription::batch(subs)
