@@ -126,7 +126,6 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 
     let inner = column![
         titlebar::titlebar(
-            "DshDesk — DeepSeek Harness 启动器",
             pal,
             &app.anim,
             titlebar::Actions {

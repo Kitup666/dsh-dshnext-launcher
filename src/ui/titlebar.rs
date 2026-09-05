@@ -10,12 +10,12 @@
 
 use crate::theme::{self, FS_SMALL, Palette};
 use crate::ui::anim::{self, AnimState};
-use crate::ui::{txt, txt_bold};
+use crate::ui::txt_bold;
 use iced::widget::{Row, container, mouse_area, row, space};
 use iced::window::Direction;
 use iced::{Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme};
 
-/// 标题栏高度（逻辑像素）。比系统的 32px 高一点，放得下品牌名。
+/// 标题栏高度（逻辑像素）。比系统的 32px 高一点，给拖动留足热区。
 pub const TITLEBAR_H: f32 = 38.0;
 /// 边缘缩放热区宽度。6px 是 Windows 原生无边框应用的常用值：够点中，又不至于误触。
 const GRIP: f32 = 6.0;
@@ -28,9 +28,9 @@ pub struct Actions<Message> {
     pub close: Message,
 }
 
-/// 自绘标题栏：左侧标题文字（整条可拖动），右侧三个窗口按钮。
+/// 自绘标题栏：左侧整条空白可拖动（不画标题文字——侧边栏品牌区已经说过一次，
+/// 标题栏再说是重复；用户反馈「左上角太丑」后删除），右侧三个窗口按钮。
 pub fn titlebar<'a, Message: Clone + 'a>(
-    title: &'static str,
     pal: &'static Palette,
     anim: &AnimState,
     actions: Actions<Message>,
@@ -45,13 +45,11 @@ pub fn titlebar<'a, Message: Clone + 'a>(
         close,
     } = actions;
 
-    // 可拖动区：标题文字 + 右侧留白，整条都能抓。
+    // 可拖动区：标题栏左半整条空白都能抓。
     let grab = mouse_area(
-        container(txt(title).size(FS_SMALL).color(pal.text_3))
+        container(space::Space::new())
             .height(Fill)
-            .width(Fill)
-            .align_y(Alignment::Center)
-            .padding(Padding::from([0, 14])),
+            .width(Fill),
     )
     .on_press(drag);
 
