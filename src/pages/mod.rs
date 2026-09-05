@@ -112,6 +112,13 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         )
         .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
         .style(widgets::slim_scroll_style(pal))
+        // 滚动偏移喂给 frosted 卡片：卡内 backdrop 光球要钉在窗口坐标上，
+        // 不随内容滚走（frosted.rs 的 MAIN_ORIGIN 与这里布局联动）。
+        .on_scroll(|viewport| {
+            let off = viewport.absolute_offset();
+            crate::ui::frosted::set_scroll_offset(off.x, off.y);
+            Message::Noop
+        })
         .width(Fill)
         .height(Fill)
         .into()
