@@ -128,6 +128,14 @@ fn main() -> iced::Result {
     )
     .title("DshDesk — DeepSeek Harness 启动器")
     .window(iced::window::Settings {
+        // 任务栏 / Alt+Tab 的窗口图标（蓝鲸，tools/make-icon.py 生成）。
+        // exe 里另嵌了同一张的多尺寸 .ico（build.rs），这里给一份运行时的。
+        icon: iced::window::icon::from_rgba(
+            include_bytes!("../assets/icons/window-64.rgba").to_vec(),
+            64,
+            64,
+        )
+        .ok(),
         // --tall：出图验收用，把长页面（设置页）一屏截完
         size: if flag("--tall") {
             iced::Size::new(1280.0, 1400.0)

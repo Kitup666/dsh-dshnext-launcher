@@ -186,7 +186,7 @@ iced 是 Elm 架构：`State → view() → Element → 用户操作 → Message
 ├── Cargo.toml
 ├── build.rs                    # 嵌入图标与清单（DPI-aware、无控制台）
 ├── assets/
-│   ├── icons/                  # 已从上一代复制
+│   ├── icons/                  # app.ico/master.png/window-64.rgba：应用图标（tools/make-icon.py 生成）；*.svg：界面图标
 │   └── fonts/                  # 内嵌字体，见 §6
 ├── docs/
 │   ├── commands.rs.tauri-reference
