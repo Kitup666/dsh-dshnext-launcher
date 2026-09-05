@@ -1,49 +1,93 @@
-# DshDesk — DeepSeek Harness 启动器
+# Dshnext
 
-DeepSeek Harness（`@deepseek-ai/dsh`）的第三方 Windows 桌面启动器，对标 Minecraft 的 PCL 启动器体验：**运行时托管、版本（profile）隔离、插件管理**，全部图形化操作，不碰命令行。
+DshDesk 的**原生 Rust 重写**（iced 0.14 + wgpu，无 WebView）。目标：低 CPU/GPU/内存 + 视觉不退步 + 单 exe 零运行时依赖。
 
-![主题预览](docs/screenshot.png)
+**当前状态：阶段 0～5 全部完成。** 六个页面可用、后端真实接通、`iced_test` 用例全绿、性能逐项实测、单 exe + NSIS 安装包已产出；阶段 5 补了切页入场动画与一轮排版/层级收口，空闲零帧不变。
 
-## 功能
+功能完整：六个页面（启动/版本管理/插件管理/环境/控制台/设置）、四种模态、toast、
+Ctrl+1..6 切页、无边框自绘标题栏。后端是真的——`dsh`/`node`/`pnpm` 版本从子进程读出，
+profile 扫真实目录，启停走 spawn/taskkill，日志经 tokio channel 进 UI。
 
-| 模块 | 说明 |
-|---|---|
-| 🚀 启动 | 选择版本一键启动 `dsh web`，独立 WebUI 窗口（或系统浏览器），实时状态与运行时长 |
-| 📦 版本管理 | 每个版本 = 一个 harness profile（`$DSH_HOME/profiles/<名>/`），独立插件集与配置层；支持新建 / 复制 / 重命名 / 删除 / 打开目录；dsh 本体版本安装、切换、回滚（含 rc 预览版） |
-| 🧩 插件管理 | 按版本隔离安装/卸载插件，全部转发官方 `dsh plugin` 命令保证兼容；内置插件市场（npm `keywords:dsh-plugin` 检索，可追加第三方 catalog.json） |
-| ⚙ 环境 | 启动器私有目录托管便携 Node.js（官方/npmmirror 镜像可选）+ dsh + pnpm，与系统环境完全隔离；一键修复重装 |
-| 📜 控制台 | harness 进程、插件安装、环境安装的实时输出，按来源过滤、复制 |
-| 🛠 设置 | DEEPSEEK_API_KEY（仅注入子进程环境变量）、端口、WebUI 打开方式、下载镜像、亮/暗主题 |
+## 实测结果（阶段 4，本机 RTX 4060 / 14 核 / Win11）
 
-## 界面主题
+| 指标 | Tauri 上一代 | Dshnext | 判据 |
+|---|---|---|---|
+| 空闲 CPU（全核） | 0.26% | **0.0015%** | ✅ < 0.1% |
+| 空闲 GPU | 1.72% | **0.00%** | ✅ ~0% |
+| 空闲出帧 | 常驻 setInterval | **delta=0**（开窗后零帧；切页动画那 5s 出 31 帧，之后立刻归零） | ✅ 0 |
+| 常驻内存（私有工作集） | 199 MB（7 进程） | **88.5 MB**（DX12，稳定不爬） | ✅ ≤ 90，降 56% |
+| 单 exe | 3 MB + 需 WebView2 | **17.31 MB** 零依赖（含 4.34 MB 字体；`+crt-static`） | ✅ ≤ 18 |
+| 首帧画好 | 236 ms | ⚠️ 本机 GUI+DX12 **~1.27 s**（见下） | 待干净 VM 复核 |
+| 功能对等 | — | `iced_test` 14 例全绿 + `--e2e` 启停链路 | ✅ |
 
-- **浅色**（默认）：淡紫灰底 + 白色卡片 + 靛紫主强调 + 青绿点缀
-- **暗色**：纯黑海拔阶梯，不掺紫，蓝色强调
-- 设置页「外观」一键切换，即时生效并持久化
+**首帧这一行是阶段 4 排查出来的真相**：阶段 0 那个漂亮的 145 ms 是**探针**测的，而探针是控制台子系统程序（没设 `windows_subsystem="windows"`）。产品为了双击启动不闪黑框用 GUI 子系统。同一份代码只改子系统标志：控制台 136 ms、GUI+DX12 1270 ms、GUI+Vulkan 497 ms、GUI+软件渲染 212 ms。慢在 wgpu 建设备那一段，根因是**这台机器的 NVIDIA 驱动枚举出 6 个重复适配器**（`iced_wgpu` 日志可见），属机器特异性开销，干净单显卡机器不会付这笔钱。保持 DX12（兼容性 + 内存优势），首帧判据留到「干净 Win10 VM」那一行复核。完整分析见 [DESIGN.md §9「首帧真相」](DESIGN.md)。
 
-## 数据目录
-
-```
-%LOCALAPPDATA%\DshDesk\
-├── config.json          # 启动器设置
-├── runtime\node\        # 托管的便携 Node.js
-├── runtime\dsh\         # 托管的 dsh / pnpm（npm 全局前缀）
-└── home\profiles\       # DSH_HOME：每个版本一个目录
-```
-
-可用环境变量 `DSHDESK_DATA_DIR` 覆盖数据目录位置。
-
-## 开发
+## 怎么跑
 
 ```bash
-npm install
-npm run tauri dev      # 开发模式（需要 Rust 工具链）
-npm run tauri build    # 产出 NSIS 安装包（src-tauri/target/release/bundle/）
+cd Dshnext
+cargo run --release                      # 开窗，鼠标 hover 看过渡，按 T 切主题
+cargo test                               # 14 例 iced_test（headless，无需 GPU/窗口）
+cargo run --release -- --shot out.png --after 5000 --theme dark   # 自截图退出
+cargo run --release -- --autotest --drawlog   # 程序自己触发 hover，出帧日志证明动画结束帧归零
+cargo run --release -- --e2e                  # 自动跑「启动第一个 profile → 8s → 停止」，验证后端链路
+cargo run --release -- --page env             # 直接开在某一页（home/profiles/plugins/env/console/settings）
+cargo run --release -- --page settings --tall # 长页面出图用，窗口开到 1280x1400
+# 截切页动画的中间帧：--switch-at 与 --after 的差就是快门落在过渡的第几毫秒
+cargo run --release -- --page home --switch-to settings --switch-at 4000 --shot mid.png --after 4095
 ```
 
-技术栈：Tauri 2 + React 18 + TypeScript + Vite；Rust 负责进程管理（`taskkill /T /F` 杀进程树）、环境安装、CLI 转发。
+调试交互用 `RUST_LOG=dshnext=debug`，每条 Message 都会打出来（Tick/ToastTick 已排除）。
+诊断后端选择临时开 `RUST_LOG=iced_wgpu=info`（默认 warn，因为适配器列表打印很贵）。
 
-## 说明
+窗口是**无边框**的（`decorations: false`），改成自绘标题栏（`src/ui/titlebar.rs`）：
+标题区可拖动，右上最小化/最大化-还原/关闭三键，四边四角 6px 缩放热区。
 
-- DeepSeek Harness 处于开发者预览期（`0.1.x-rc`），CLI 与配置格式可能演进；启动器把所有 `dsh` 调用集中在 `src-tauri/src/dsh.rs` 一处，便于跟进。
-- 本项目与 DeepSeek 官方无关，harness 本体为 MIT 开源（github.com/deepseek-ai/deepseek-harness）。
+## 打包
+
+- **单 exe（推荐，绿色版）**：`cargo build --release` → `target/release/dshnext.exe`（17.32 MB，零运行时依赖，拷走即用）。
+  `.cargo/config.toml` 里已固化 `-C target-feature=+crt-static`：默认 MSVC 构建会动态依赖 `VCRUNTIME140.dll`（VC++ 运行库，干净机器上没有），静态链 CRT 后 `dumpbin /DEPENDENTS` 只剩 kernel32/user32/gdi32 这类系统 DLL——这才是真正的「零运行时依赖」。
+- **NSIS 安装包（可选）**：`packaging/installer.nsi`，用 `makensis` 编译 → `packaging/Dshnext_0.1.0_x64-setup.exe`（6.50 MB，lzma 压到 37%）。每用户安装（`$LOCALAPPDATA\Programs\Dshnext`，免管理员），带开始菜单项与卸载器。注册表标识用 `Dshnext` 与上一代的 `DshDesk` 分开，避免互相覆盖卸载项。安装包不入库（`.gitignore` 里 `packaging/*.exe`），需要时现编。
+  装卸一圈实测过：`setup /S /D=<目录>` 后包内 exe 与 `target/release` 的 SHA-256 相同，卸载后安装目录、开始菜单项、注册表卸载项全部消失。
+
+## 出图与对照
+
+- 六页 × 明暗：`shots/p5-<页面>-{dark,light}.png`（阶段 4 的那批留在 `p4-*`）
+- **与上一代并排对比**：`shots/compare-p5/<页面>.png`（左 Tauri、右 Dshnext，六页齐全；`python tools/make-compare.py --gen p5` 重出）
+- 切页动画取证：`shots/anim/{t075,t035,settled}.png`（同一次过渡的三个时刻）
+- 暗色精修依据：`shots/compare-orevx.png`；设计全文：[DESIGN.md](DESIGN.md)
+- 阶段 0 探针与测量脚本：`phase0/`（保留，性能回归用；每次改动重跑 `phase0/tools/measure-idle.ps1`）
+
+## 目录
+
+```
+phase0/       阶段 0 探针工程 + 实测报告 + 测量脚本（保留，用于性能回归）
+src/main.rs   入口：DX12 限定 + 字体加载 + --shot/--autotest/--drawlog/--e2e/--switch-to
+src/app.rs    顶层 State/Message
+src/update.rs 全部状态迁移 + subscription（空闲零订阅）
+src/tests.rs  iced_test 用例（view↔update 契约，14 例）
+src/bridge.rs core 与 iced 的桥：channel / ProcMap 全局持有 + Subscription 事件流
+src/theme.rs  设计令牌：两套配色 + 字号阶梯 + 圆角/节奏/阴影两档层级
+src/ui/       通用组件：anim/button/card/icon/modal/reveal/titlebar/widgets
+src/core/     从上一代复制的后端（业务逻辑不改 + 新增 event.rs）
+src/pages/    六个页面
+assets/       图标（10 个 svg）、内嵌字体（4.34 MB）
+packaging/    NSIS 安装包脚本
+```
+
+## 与上一代的差异
+
+| | DshDesk（Tauri） | Dshnext（iced） |
+|---|---|---|
+| 前端 | React + WebView2 | 纯 Rust GPU 渲染 |
+| 进程数 | 7 | **1** |
+| 分发 | 3 MB + 需系统 WebView2 | 单 exe 17.31 MB，零依赖（CRT 静态链） |
+| 内存 | 199 MB | 88.5 MB（GPU）/ 15.3 MB（软件） |
+| WebUI 窗口 | 内置窗口 | **交给系统浏览器** |
+| 可访问性 | WebView2 自带 a11y 树 | **暂无**（iced 0.14 无 AccessKit，UIA 树里后代数为 0） |
+| 自动化测试 | UIA 脚本（`../scripts/e2e.ps1`） | `iced_test`（框架内模拟，`src/tests.rs`） |
+| 数据目录 | `%LOCALAPPDATA%\DshDesk\` | 同一个，完全兼容 |
+
+**已知退步**：无屏幕阅读器支持（可访问性）；本机 GUI+DX12 首帧偏慢（驱动特异性）。取舍清单见 [DESIGN.md §12](DESIGN.md)。
+
+上一代（Tauri 版）保持可用，**不因本重构而删除或停止维护**，直到 Dshnext 在干净机器上全部达标。

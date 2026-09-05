@@ -1,8 +1,3 @@
-node_modules/
-dist/
-src-tauri/target/
-src-tauri/gen/
-*.log
-.DS_Store
-
-.zcode/
+target/
+# 构建产物：安装包由 makensis 从 installer.nsi 现编，不入库
+packaging/*.exe
