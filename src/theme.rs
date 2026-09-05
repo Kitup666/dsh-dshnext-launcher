@@ -176,11 +176,12 @@ impl Palette {
         bad: rgb!(0xf0616d),
         bad_soft: rgba!(0xf0616d, 0.13),
 
-        // 环境光双球：峰值 alpha 在径向 Mesh 上做线性衰减。用户两轮定稿：
-        // -30%（0.17→0.12 / 0.13→0.09），再 -40%（0.12→0.07 / 0.09→0.05）。
-        ambient_top: rgba!(0x4f46e5, 0.07),
+        // 环境光双球：峰值 alpha 在径向 Mesh 上做线性衰减。用户三轮定稿：
+        // -30%（0.17→0.12 / 0.13→0.09）→ -40%（0.12→0.07 / 0.09→0.05）
+        // → 再减半（0.07→0.035 / 0.05→0.025）。
+        ambient_top: rgba!(0x4f46e5, 0.035),
         ambient_mid: rgba!(0x7c5cd6, 0.05),
-        ambient_bot: rgba!(0x1e3a8a, 0.05),
+        ambient_bot: rgba!(0x1e3a8a, 0.025),
 
         // 暗色阴影弱化：轮廓交给 card_border，阴影只留一点深度感。
         shadow_card: Shadow {
