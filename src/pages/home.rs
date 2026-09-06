@@ -6,15 +6,17 @@ use crate::theme::{FS_BODY, FS_HERO, FS_MICRO, FS_TINY, GAP_SECTION, Palette};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono, txt, txt_bold};
-use iced::widget::{Column, Row, column, container, row, space};
+use iced::widget::{Column, Row, column, container, row, scrollable, space};
 use iced::{Alignment, Element, Fill};
 
 pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let pal = app.palette();
     // 首页没有 page_head——hero 自己就是页头，所以它与下面的列表卡之间用大档间距，
-    // 不是 GAP_CARD（那是同级卡片之间的量）。
+    // 不是 GAP_CARD（那是同级卡片之间的量）。列本身 Fill 高：实例卡的 Fill
+    // 才能吃到剩余空间（见 instances）。
     column![hero(app, pal), instances(app, pal)]
         .spacing(GAP_SECTION)
+        .height(Fill)
         .into()
 }
 
@@ -201,31 +203,50 @@ fn meta_cell<'a>(
         .into()
 }
 
-/// 运行中实例列表（CSS `.card.flush` + `.list`）。
+/// 运行中实例列表（CSS `.card.flush` + `.list`）。**Fill 高度**：首页只有
+/// hero + 这张卡（页面免滚，同控制台模式），让它吃掉剩余空间——内容全挤
+/// 在顶部、底下留大片黑 void 的失衡构图（2026-09-06 用户指出），玻璃卡面
+/// 把 void 收进页面。行多时列表在卡内自己滚，hero 恒定可见。
 fn instances<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
-    let mut col = Column::new()
-        .push(card::card_title("运行中的实例"))
-        .push(card::card_sub(
+    let head = column![
+        card::card_title("运行中的实例"),
+        card::card_sub(
             "每个版本独立进程，可同时运行多个（注意端口不要冲突）。",
             pal,
-        ))
-        .spacing(4);
+        ),
+        space::vertical().height(8.0),
+    ]
+    .spacing(4);
+
+    let mut col = Column::new().height(Fill).push(head);
 
     if app.procs.is_empty() {
-        col = col
-            .push(space::vertical().height(8.0))
-            .push(widgets::empty("当前没有运行中的实例", pal));
+        // 空态在剩余高度里垂直居中：高卡片的空态不是「贴在标题下面」，
+        // 而是占据面板中心。
+        col = col.push(
+            container(widgets::empty("当前没有运行中的实例", pal))
+                .width(Fill)
+                .height(Fill)
+                .align_y(Alignment::Center),
+        );
     } else {
-        col = col.push(space::vertical().height(8.0));
+        let mut rows = Column::new();
         for (i, p) in app.procs.iter().enumerate() {
             if i > 0 {
-                col = col.push(widgets::divider(pal));
+                rows = rows.push(widgets::divider(pal));
             }
-            col = col.push(instance_row(app, p, pal));
+            rows = rows.push(instance_row(app, p, pal));
         }
+        col = col.push(
+            scrollable(rows)
+                .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
+                .style(widgets::slim_scroll_style(pal))
+                .width(Fill)
+                .height(Fill),
+        );
     }
 
-    card::card(col, pal)
+    card::card_fill(col, pal)
 }
 
 fn instance_row<'a>(

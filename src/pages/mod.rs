@@ -97,18 +97,21 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         Page::Settings => settings::view(app),
     };
 
-    // 控制台页自己撑满高度（内部滚动），其余页面外层滚动。
-    let body: Element<'_, Message> = if app.page == Page::Console {
+    // 控制台、首页自己撑满高度（页面免滚，列表在卡内滚），其余页面外层滚动。
+    // 容器 height(Fill) 给页面里的 Fill 高度卡传递空间。
+    // （Fill 在 scrollable 里会退化成 Shrink——iced 给滚动的子树无穷上限。）
+    let body: Element<'_, Message> = if matches!(app.page, Page::Console | Page::Home) {
         container(page_body)
             .width(Fill)
             .height(Fill)
-            .padding(Padding::from(44).top(28))
+            .padding(Padding::from(44).top(36))
             .into()
     } else {
         scrollable(
             container(page_body)
                 .width(Fill)
-                .padding(Padding::from(44).top(28)),
+                .height(Fill)
+                .padding(Padding::from(44).top(36)),
         )
         .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
         .style(widgets::slim_scroll_style(pal))
