@@ -369,6 +369,18 @@ fn open_ui_without_url_parks_pending() {
 }
 
 #[test]
+fn toggle_topmost_flips_config_and_draft() {
+    let mut a = seeded_app();
+    assert!(!a.config.always_on_top);
+    // 无真实窗口时 find_window 落空，win32 调用安全成 no-op，逻辑照走。
+    drop(a.update(Message::ToggleTopmost));
+    assert!(a.config.always_on_top);
+    assert!(a.cfg_draft.always_on_top, "草稿要同步，设置页不能因此显示未保存");
+    drop(a.update(Message::ToggleTopmost));
+    assert!(!a.config.always_on_top);
+}
+
+#[test]
 fn running_instance_shows_stop() {
     let mut a = seeded_app();
     a.page = Page::Home;

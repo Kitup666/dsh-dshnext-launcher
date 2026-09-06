@@ -37,6 +37,8 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
         "还没检测到 dsh，请先到「环境」页完成安装。"
     };
 
+    let narrow = app.win_size.map(|s| s.width < 1150.0).unwrap_or(false);
+
     let left = column![
         txt("DEEPSEEK HARNESS").size(FS_MICRO).color(pal.text_3),
         txt_bold(title).size(FS_HERO).color(pal.text),
@@ -105,17 +107,24 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
         )),
     };
 
-    let meta = meta_strip(app, running, pal);
+    let meta = meta_strip(app, running, narrow, pal);
 
-    // 英雄卡：圆角/内边距/阴影都比普通卡片高一档（ui::card::card_hero）。
-    // 控件组紧跟文案（32px），不再贴右缘——两头重中间空的「哑铃布局」被 judge 点掉。
+    // 窄窗口（win_size 来自 window 事件订阅）：操作组掉到标题下方一行，
+    // 否则 row 里被挤爆的按钮直接裁掉（截图实测「停止运行/打开界面」消失）。
+    // 阈值给宽一点：hero 是 左文案+下拉+双按钮，1150 逻辑像素以下就挤了。
+    let head: Element<'_, Message> = if narrow {
+        column![left, actions].spacing(16).into()
+    } else {
+        // 英雄卡：圆角/内边距/阴影都比普通卡片高一档（ui::card::card_hero）。
+        // 控件组紧跟文案（32px），不再贴右缘——两头重中间空的「哑铃布局」被 judge 点掉。
+        row![left, actions]
+            .spacing(32)
+            .width(Fill)
+            .align_y(Alignment::End)
+            .into()
+    };
     card::card_hero(
-        column![
-            row![left, actions].spacing(32).width(Fill).align_y(Alignment::End),
-            widgets::divider(pal),
-            meta,
-        ]
-        .spacing(GAP_SECTION),
+        column![head, widgets::divider(pal), meta].spacing(GAP_SECTION),
         pal,
     )
 }
@@ -124,6 +133,7 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
 fn meta_strip<'a>(
     app: &'a Dshnext,
     running: Option<&'a crate::core::procman::ProcStatus>,
+    narrow: bool,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let plugin_count = app
@@ -153,41 +163,51 @@ fn meta_strip<'a>(
         None => (format!("127.0.0.1:{} 待用", app.config.port), pal.text_3),
     };
 
-    // 五列等宽（Fill + 固定 gap）：第一版按内容给固定宽度，列间距参差像没对齐。
-    row![
-        meta_cell("状态", status, pal),
-        meta_cell(
-            "运行时长",
-            txt_bold(
-                running
-                    .map(|p| fmt_uptime(p.uptime_secs))
-                    .unwrap_or_else(|| DASH.into())
-            )
-            .size(FS_BODY)
-            .color(pal.text)
-            .into(),
-            pal
-        ),
-        meta_cell("WEB 地址", mono(addr).size(FS_BODY).color(addr_color).into(), pal),
-        meta_cell(
-            "进程 PID",
-            // 有值走等宽（数字对齐），无值走正文——同一个破折号在两种字体下宽度不同，
-            // 混用会让两个空位看起来是不同符号。
-            match running {
-                Some(p) => mono(p.pid.to_string()).size(FS_BODY).color(pal.text).into(),
-                None => txt_bold(DASH).size(FS_BODY).color(pal.text).into(),
-            },
-            pal
-        ),
-        meta_cell(
-            "插件",
-            txt_bold(format!("{plugin_count} 个")).size(FS_BODY).color(pal.text).into(),
-            pal
-        ),
-    ]
-    .spacing(24)
-    .align_y(Alignment::Start)
-    .into()
+    let cell_status = meta_cell("状态", status, pal);
+    let cell_uptime = meta_cell(
+        "运行时长",
+        txt_bold(
+            running
+                .map(|p| fmt_uptime(p.uptime_secs))
+                .unwrap_or_else(|| DASH.into())
+        )
+        .size(FS_BODY)
+        .color(pal.text)
+        .into(),
+        pal,
+    );
+    let cell_addr = meta_cell("WEB 地址", mono(addr).size(FS_BODY).color(addr_color).into(), pal);
+    let cell_pid = meta_cell(
+        "进程 PID",
+        // 有值走等宽（数字对齐），无值走正文——同一个破折号在两种字体下宽度不同，
+        // 混用会让两个空位看起来是不同符号。
+        match running {
+            Some(p) => mono(p.pid.to_string()).size(FS_BODY).color(pal.text).into(),
+            None => txt_bold(DASH).size(FS_BODY).color(pal.text).into(),
+        },
+        pal,
+    );
+    let cell_plugins = meta_cell(
+        "插件",
+        txt_bold(format!("{plugin_count} 个")).size(FS_BODY).color(pal.text).into(),
+        pal,
+    );
+
+    // 五列等宽（Fill + 固定 gap）。窄窗口拆两行（3+2）：单行五列时 Fill 的
+    // 份额装不下内容，WEB 地址和 PID 直接叠字（截图实测）。
+    if narrow {
+        column![
+            row![cell_status, cell_uptime, cell_plugins].spacing(24),
+            row![cell_addr, cell_pid].spacing(24),
+        ]
+        .spacing(14)
+        .into()
+    } else {
+        row![cell_status, cell_uptime, cell_addr, cell_pid, cell_plugins]
+            .spacing(24)
+            .align_y(Alignment::Start)
+            .into()
+    }
 }
 
 /// 空值占位符。全局只有这一处定义，避免 em/en dash 混用。

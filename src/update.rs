@@ -109,6 +109,10 @@ impl Dshnext {
             Message::WindowEvent(window::Event::Opened { position, size }) => {
                 self.win_pos = position;
                 self.win_size = Some(size);
+                // 置顶要等窗口真出来了才能设（main 里设得太早，FindWindowW 落空）。
+                if self.config.always_on_top {
+                    crate::win32::set_topmost(crate::app::WINDOW_TITLE, true);
+                }
                 Task::none()
             }
             // 最大化期间不更新几何：保存的必须是还原态尺寸（见 app.win_pos 注释）。
@@ -205,6 +209,16 @@ impl Dshnext {
                 Task::perform(async move { crate::core::store::save(&cfg) }, |r| {
                     Message::ConfigSaved(r)
                 })
+            }
+            // 状态栏图钉：立即生效、立即落盘（不走设置页草稿——那是延迟保存的语义）。
+            Message::ToggleTopmost => {
+                self.config.always_on_top = !self.config.always_on_top;
+                crate::win32::set_topmost(crate::app::WINDOW_TITLE, self.config.always_on_top);
+                self.cfg_draft.always_on_top = self.config.always_on_top;
+                if let Err(e) = crate::core::store::save(&self.config) {
+                    log::warn!("保存置顶开关失败: {e}");
+                }
+                Task::none()
             }
             Message::CfgAutoStart(v) => {
                 self.cfg_draft.autostart = v;

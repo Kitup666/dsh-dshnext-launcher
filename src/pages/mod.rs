@@ -14,6 +14,7 @@ use crate::theme::{self, FS_BODY, FS_MICRO, FS_TINY, FS_TITLE, Palette};
 use crate::ui::anim;
 use crate::ui::glass_pipeline::fade_veil;
 use crate::ui::glow_mesh;
+use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal;
 use crate::ui::reveal::reveal;
@@ -264,13 +265,29 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
         Some(_) if ready => (pal.ok, "环境就绪"),
         Some(_) => (pal.warn, "环境未就绪"),
     };
+    // 图钉：窗口置顶开关，立即生效并落盘（不走设置页草稿）。
+    let pinned = app.config.always_on_top;
+    let pin = button::btn(
+        Spec::new("sb.pin", if pinned { "已置顶" } else { "置顶" },
+                  if pinned { Variant::Accent } else { Variant::Secondary })
+            .size(BtnSize::Small),
+        pal,
+        &app.anim,
+        Some(Message::ToggleTopmost),
+        Some(Message::HoverEnter("sb.pin")),
+        Some(Message::HoverExit("sb.pin")),
+    );
+
     let foot = column![
         row![
             widgets::dot(dot_color),
             txt(ready_text).size(FS_TINY).color(pal.text_3),
+            space::horizontal(),
+            pin,
         ]
         .spacing(8)
-        .align_y(Alignment::Center),
+        .align_y(Alignment::Center)
+        .width(Fill),
         foot_row(
             "dsh",
             app.env

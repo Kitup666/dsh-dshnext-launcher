@@ -254,6 +254,7 @@ pub enum Message {
     CfgAutoOpen(bool),
     CfgAutoStart(bool),
     CfgTray(bool),
+    ToggleTopmost,
     CfgUpdateUrl(String),
     CfgAutoRestart(bool),
     CfgNodeMirror(String),
@@ -360,6 +361,7 @@ impl Dshnext {
         a.api_key != b.api_key
             || a.port != b.port
             || a.auto_open != b.auto_open
+            || a.always_on_top != b.always_on_top
             || a.autostart != b.autostart
             || a.tray != b.tray
             || a.update_url != b.update_url

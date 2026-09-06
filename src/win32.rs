@@ -36,6 +36,22 @@ pub fn hide_main_window(title: &str) {
     }
 }
 
+/// 置顶开关：HWND_TOPMOST / HWND_NOTOPMOST 只改 Z 序，不动位置尺寸、不抢焦点。
+pub fn set_topmost(title: &str, on: bool) {
+    unsafe {
+        if let Some(hwnd) = find_window(title) {
+            let insert = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
+            SetWindowPos(hwnd, insert, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
+}
+
+const HWND_TOPMOST: isize = -1;
+const HWND_NOTOPMOST: isize = -2;
+const SWP_NOSIZE: u32 = 0x0001;
+const SWP_NOMOVE: u32 = 0x0002;
+const SWP_NOACTIVATE: u32 = 0x0010;
+
 unsafe fn find_window(title: &str) -> Option<isize> {
     let mut wide: Vec<u16> = title.encode_utf16().collect();
     wide.push(0);
@@ -57,5 +73,7 @@ unsafe extern "system" {
     fn SetForegroundWindow(hwnd: isize) -> i32;
     fn GetForegroundWindow() -> isize;
     fn AttachThreadInput(a: u32, b: u32, attach: i32) -> i32;
+    #[allow(non_snake_case)]
+    fn SetWindowPos(hwnd: isize, after: isize, x: i32, y: i32, w: i32, h: i32, flags: u32) -> bool;
     fn GetWindowThreadProcessId(hwnd: isize, pid: *mut u32) -> u32;
 }

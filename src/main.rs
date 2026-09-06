@@ -100,6 +100,8 @@ fn main() -> iced::Result {
     bridge::init();
     // 清掉上次自更新换身留下的 exe.old（此刻运行中的已经是新 exe）。
     crate::core::selfupdate::cleanup_old();
+    // 注意：置顶不能在这里设——窗口还没建出来，FindWindowW 落空。
+    // 在 update 的 WindowEvent::Opened 里按 config.always_on_top 应用。
 
     // --page：直接开在某一页，出图验收时省得点。
     let start_page = match opt("--page").as_deref() {

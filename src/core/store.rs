@@ -31,6 +31,8 @@ pub struct Config {
     pub autostart: bool,
     /// 关闭到托盘（托盘常驻模式）；关 = 关窗即退出
     pub tray: bool,
+    /// 启动器窗口置顶（状态栏的图钉开关，立即生效并保存）
+    pub always_on_top: bool,
     /// 启动器更新源（GitHub Releases API 地址），空 = 不检查更新
     pub update_url: String,
     /// harness 异常退出时自动重启（指数退避，最多连 3 次）
@@ -52,6 +54,7 @@ impl Default for Config {
             theme: "light".into(),
             autostart: false,
             tray: false,
+            always_on_top: false,
             update_url: String::new(),
             auto_restart: false,
             window: None,
