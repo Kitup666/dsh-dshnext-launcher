@@ -176,17 +176,19 @@ where
                 };
                 iced::widget::container::draw_background(r, &shadow_style, bounds);
 
-                // 裁剪层向外放宽 1 逻辑 px：iced 的 scissor 对 clip×缩放的
-                // 位置和尺寸各自取整，跟我们取整后的卡矩形可能差半像素，
-                // 最外一圈描边行随机被裁（用户实测「描边亮线上/下边随机
-                // 消失」）。层里只画玻璃图元（SDF 圆角外 alpha=0），放宽
-                // 完全不可见；内容层仍用紧的 clipped。
-                let loose = clipped.expand(1.0);
+                // viewport==rect 契约：传给 draw_primitive 的 bounds 必须
+                // 与 prepare 写进 uniforms 的 rect 逐位一致（见
+                // glass_pipeline::snap_to_physical），否则 uv→屏幕坐标的
+                // 反推被拉伸，1px 描边随机落到错误的行上。
+                // 裁剪层向外放宽 1 逻辑 px：层里只画玻璃图元（SDF 圆角外
+                // alpha=0），放宽不可见，且 scissor 怎么取整都裁不到描边。
+                let snapped = crate::ui::glass_pipeline::snap_to_physical(clipped);
+                let loose = snapped.expand(1.0);
                 r.with_layer(loose, |r| {
                     use iced_wgpu::primitive::Renderer as _;
                     if let Some(glass) = extract_glass(&self.style, self.grain) {
                         r.draw_primitive(
-                            loose,
+                            snapped,
                             crate::ui::glass_pipeline::GlassQuad::card(
                                 glass,
                                 self.backdrop.unwrap(),

@@ -52,6 +52,33 @@ pub struct CardGlass {
     pub grain_tile: (f32, f32),
 }
 
+/// 当前缩放系数（prepare 写入，draw 侧取整用）。draw 拿不到 scale，
+/// 而 viewport==rect 契约必须在 draw 侧定 bounds，只能中转。
+static SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// 把逻辑矩形取整到物理像素网格（两端各自 round）。
+/// iced 的自定义图元 viewport 直接取 `bounds × scale`（小数也照设），
+/// 而 shader 的 uv↔屏幕坐标换算假设「viewport 恰为 rect 本身」——
+/// 两者差半像素时 SDF 描边会算到错误的行上，随机缺上/下/左/右边。
+/// draw 与 prepare 必须传同一个取整后的矩形。
+pub fn snap_to_physical(bounds: Rectangle) -> Rectangle {
+    let bits = SCALE.load(std::sync::atomic::Ordering::Relaxed);
+    let s = f32::from_bits(bits);
+    if s <= 0.0 {
+        return bounds;
+    }
+    let x0 = (bounds.x * s).round();
+    let y0 = (bounds.y * s).round();
+    let x1 = ((bounds.x + bounds.width) * s).round();
+    let y1 = ((bounds.y + bounds.height) * s).round();
+    Rectangle {
+        x: x0 / s,
+        y: y0 / s,
+        width: (x1 - x0) / s,
+        height: (y1 - y0) / s,
+    }
+}
+
 /// 一个玻璃 quad 的绘制模式。shader 里 mode：0=背景、1=卡片、2=帏幕。
 /// 生命周期：每帧 draw 时构造，prepare 后即弃；slot 存管线里的
 /// uniform 缓冲槽位号（prepare 无 mut self，用原子回写；Primitive
@@ -125,16 +152,10 @@ impl Primitive for GlassQuad {
         viewport: &Viewport,
     ) {
         let s = viewport.scale_factor();
-        let rp = *bounds * s; // 物理 px；层变换（滚动/reveal）已由 iced 叠好
-        // 对齐物理像素网格：1.25 缩放下逻辑间距 14/7 之类会产生 17.5 这种
-        // 半像素坐标，1px 描边被两行像素平摊、深底上隐形（用户报的「底边
-        // 白边有时缺失」）。整卡取整，位移 ≤0.5px 不可感知。
-        let rp = Rectangle {
-            x: rp.x.round(),
-            y: rp.y.round(),
-            width: rp.width.round(),
-            height: rp.height.round(),
-        };
+        SCALE.store(s.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        // bounds 已在 draw 侧用 snap_to_physical 取整（viewport == rect 契约，
+        // 见该函数注释），这里直接用。
+        let rp = *bounds * s;
 
         let mut u = Uniforms {
             rect: [rp.x, rp.y, rp.width, rp.height],

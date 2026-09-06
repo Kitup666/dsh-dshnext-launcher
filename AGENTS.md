@@ -102,7 +102,7 @@
 29. **dst-read 混合（真 backdrop-filter / 逐像素混合模式）在 wgpu 27 下不可达**：primitive 的 `render()` 回调只给 `TextureView`，拿不到 `Texture` 句柄做 `copy_texture_to_texture`，wgpu 也没有 framebuffer fetch。已知底图时用**解析求值**替代读画布（glass.wgsl 在 fragment 里重算光球场——数学上还更准）。
 30. **双后端编译时 `iced::Renderer` 是 fallback 枚举**（`Primary`=wgpu、`Secondary`=tiny-skia，变体公开可 match），后端专属 widget 按变体分路（`frosted.rs`/`glass_pipeline.rs` 的背景 widget）。`iced::renderer` 模块是私有的，枚举要从 `iced_renderer` crate 引；wgpu 本体用 `iced::wgpu` 再导出（版本与 iced 锁死，**别单独加 wgpu 依赖**，否则 trait 签名对不上）。
 31. **嵌套 `with_layer` 的 bounds 不与父裁剪求交。** `push_clip`（iced_graphics layer.rs）直接 `layers.push(with_bounds(bounds))`，不复交——scrollable 用 `with_layer(visible_bounds)` 裁内容，里面的 frosted 卡片再开自己的层时若传**内容坐标的全尺寸 bounds**，就逃出滚动裁剪：滚上去的卡片画到标题栏上。修法：层边界一律传 `bounds.intersection(viewport)`（frosted.rs 的 `clipped`）。viewport 已是内容坐标系，push_clip 会乘上层变换把它变回物理坐标，不用再手算滚动偏移。
-32. **玻璃图元的物理矩形必须取整**（glass_pipeline prepare，2026-09-06）：1.25 缩放下逻辑间距 14/7 会产生 17.5 这种半像素坐标，shader 的 1px 描边被两行像素平摊，深底上隐形——表现为「卡片底边亮边有时缺失」，窗口高度/滚动位置一变又出现。rect 进 Uniforms 前 x/y/w/h 各 `.round()`。
+32. **玻璃图元有「viewport == rect」逐位相等契约**（glass_pipeline `snap_to_physical`，2026-09-06）：顶点着色器画全屏大三角形，fragment 用 `phys = rect.xy + uv × rect.wh` 反推屏幕坐标，而 uv 是按 `draw_primitive` 传入的 bounds（→ set_viewport，小数照设）映射的——**bounds 与 u.rect 差半像素，整个坐标系被拉伸，1px 描边的 SDF 随机落到错误的行上**，表现为「卡片描边亮线随机缺某一段/某一条边」（实测还有弧形咬痕）。draw 与 prepare 必须传同一个取整到物理网格的矩形；draw 拿不到 scale，用 prepare 存的原子 static 中转。裁剪层可再放宽 1px（层里只有玻璃图元，圆角外 alpha=0）。
 33. **滚动页顶/底渐隐帏幕（`glass_pipeline::fade_veil`，shader 模式 2）是不透明背景场 + 带高 alpha 渐隐**，色 = bg_app + 光球，与窗外背景续上；顶帏带宽必须**窄于**内容顶 padding（现 14 < 44）——等宽的话稍滚一点首行标题就整个被吃掉（用户实测否掉 44）。帏幕不实现 update，stack 逆序派发返回 Ignored，滚轮/拖拽照常到达 scrollable。
 
 ## 后端复用（core/，抄自第一代）
