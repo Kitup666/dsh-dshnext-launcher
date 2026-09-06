@@ -80,7 +80,7 @@ fn offline_card<'a>(
         ),
         space::vertical().height(6.0),
     ];
-    let mut row_offline = |col: Column<'a, Message>, name: String, msg: Message, key: &'static str| {
+    let row_offline = |col: Column<'a, Message>, name: String, msg: Message, key: &'static str| {
         col.push(widgets::list_row(
             None,
             column![mono(name)],

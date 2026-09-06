@@ -551,11 +551,15 @@ impl Dshnext {
                         )
                     }
                     crate::core::platform::PortProbe::Http if !own && !via_restart => {
+                        // 端口被别的（或上次残留的）dsh 占着：token 只在它启动时
+                        // 的 stdout 里，我们拿不到，裸地址开出来是 401——别开。
                         self.notify(
-                            ToastKind::Info,
-                            format!("端口 {port} 已有 Web 服务在运行，直接打开它"),
+                            ToastKind::Warn,
+                            format!(
+                                "端口 {port} 已有 WebUI 在运行，但本启动器拿不到它的登录地址                                 （token 只在 dsh 启动输出里）。请用原入口打开；                                 若是启动器残留的实例，停止它后再启动即可"
+                            ),
                         );
-                        Task::done(Message::OpenPath(format!("http://127.0.0.1:{port}")))
+                        Task::none()
                     }
                     crate::core::platform::PortProbe::Http if via_restart => {
                         // 崩掉的实例残留子进程还占着口：退避重试，计数并入序列。
@@ -597,14 +601,19 @@ impl Dshnext {
                 self.busy = None;
                 match result {
                     Ok((profile, url)) => {
-                        self.urls.insert(profile.clone(), url.clone());
                         self.crash_restarts.remove(&profile);
                         self.notify(ToastKind::Info, format!("正在启动 {profile}…"));
                         let mut tasks = vec![Task::done(Message::PollProcs)];
                         let is_e2e = std::env::args().any(|a| a == "--e2e");
                         if self.config.auto_open && !is_e2e {
-                            tasks.push(Task::done(Message::OpenPath(url)));
+                            // start() 返回的是裸地址（无 token，开出来 404）；
+                            // 等 Url 事件带 token 的地址来了再开（pending_open）。
+                            self.pending_open.insert(
+                                profile.clone(),
+                                Instant::now() + Duration::from_secs(30),
+                            );
                         }
+                        let _ = url; // 裸地址不能用来打开（404），展示走 procs 的 url 字段
                         if is_e2e {
                             tasks.push(Task::perform(
                                 async { tokio::time::sleep(Duration::from_secs(8)).await },
@@ -657,6 +666,21 @@ impl Dshnext {
             }
             Message::ProcsLoaded(list) => {
                 self.procs = list;
+                // 轮询只在有实例时挂——正好用来清过期的自动打开等待（30s）。
+                let now = Instant::now();
+                let expired: Vec<String> = self
+                    .pending_open
+                    .iter()
+                    .filter(|(_, d)| **d <= now)
+                    .map(|(p, _)| p.clone())
+                    .collect();
+                for profile in &expired {
+                    self.pending_open.remove(profile);
+                    self.notify(
+                        ToastKind::Warn,
+                        format!("{profile}：等了 30 秒也没拿到 WebUI 地址，自动打开已取消"),
+                    );
+                }
                 Task::none()
             }
             Message::OpenPath(path) => {
@@ -668,6 +692,16 @@ impl Dshnext {
             }
             Message::OpenUi(profile) => match self.url_of(&profile) {
                 Some(url) => Task::done(Message::OpenPath(url)),
+                None if self.running(&profile).is_some() => {
+                    // 实例在跑但带 token 的地址还没从 stdout 里解析出来：
+                    // 挂起等待，地址一到自动开（绝不拿裸地址开 404）。
+                    self.pending_open.insert(
+                        profile.clone(),
+                        Instant::now() + Duration::from_secs(30),
+                    );
+                    self.notify(ToastKind::Info, "WebUI 地址就绪后自动打开…");
+                    Task::none()
+                }
                 None => {
                     self.notify(ToastKind::Err, "还没拿到 WebUI 地址，请稍等启动完成");
                     Task::none()
@@ -1031,6 +1065,10 @@ impl Dshnext {
             CoreEvent::Url { profile, url } => {
                 self.urls.insert(profile.clone(), url.clone());
                 self.sys_log(&profile, format!("WebUI 地址：{url}"));
+                // 带 token 的地址到了，兑现等着的自动打开。
+                if self.pending_open.remove(&profile).is_some() {
+                    return Task::done(Message::OpenPath(url));
+                }
             }
             CoreEvent::Exit { profile, code } => {
                 self.sys_log(&profile, format!("进程已退出（退出码 {code}）"));

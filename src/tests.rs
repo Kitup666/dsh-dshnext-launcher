@@ -332,6 +332,43 @@ fn home_start_emits_start_message() {
 }
 
 #[test]
+fn auto_open_waits_for_tokened_url() {
+    // 裸地址（无 token）开出来是 404：自动打开必须等 Url 事件带 token 的地址。
+    let mut a = seeded_app();
+    a.config.auto_open = true;
+    a.update(Message::Started(Ok(("demo".into(), "http://127.0.0.1:3080".into()))));
+    assert!(
+        a.pending_open.contains_key("demo"),
+        "auto_open 时应登记等待带 token 的地址"
+    );
+    let task = a.update(Message::Core(crate::core::event::CoreEvent::Url {
+        profile: "demo".into(),
+        url: "http://127.0.0.1:3080/?token=abc".into(),
+    }));
+    assert!(!a.pending_open.contains_key("demo"), "地址到了应兑现等待");
+    let _ = task; // Task::done(OpenPath(tokened))，测试环境不执行
+}
+
+#[test]
+fn open_ui_without_url_parks_pending() {
+    let mut a = seeded_app();
+    a.procs = vec![crate::core::procman::ProcStatus {
+        profile: "demo".into(),
+        port: 3080,
+        url: "http://127.0.0.1:3080".into(),
+        pid: 4321,
+        uptime_secs: 75,
+    }];
+    drop(a.update(Message::OpenUi("demo".into())));
+    assert!(a.pending_open.contains_key("demo"), "实例在跑但地址未到：应挂起等待而非报错");
+    drop(a.update(Message::Core(crate::core::event::CoreEvent::Url {
+        profile: "demo".into(),
+        url: "http://127.0.0.1:3080/?token=x".into(),
+    })));
+    assert!(!a.pending_open.contains_key("demo"));
+}
+
+#[test]
 fn running_instance_shows_stop() {
     let mut a = seeded_app();
     a.page = Page::Home;

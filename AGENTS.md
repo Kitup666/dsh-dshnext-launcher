@@ -49,6 +49,9 @@
 
 ## 出图与验收
 
+- **dsh 的 WebUI 只挂在带 token 的地址上**（裸 `http://127.0.0.1:3080/` 是 401「authentication required」），token **只出现在 dsh 启动时的 stdout**（`CoreEvent::Url` 解析），不落盘、CLI 也没有补打的开关。所以启动器**任何路径都不许开裸地址**：`Started` 里 `auto_open` 走 `pending_open` 等 Url 事件；端口被残留/外部实例占着（探到 Http 且非自己起的）时拿不到 token，只能提示、不能开。启动器重启后对已在跑的实例永远无法恢复入口——要换入口只能停了重起。
+
+
 - `--page <名>` 直接开在某一页（home/profiles/plugins/env/console/settings），`--tall` 把窗口开到 1280×1400 好把设置页一屏截完
 - `--shot 路径 --after 毫秒` 自截图退出。**`--after` 要给够**：六页都会在开窗时发环境探测（三次 `xx --version`，每次可能几秒），2 秒会截到还没填好的界面，给 4000 稳当
 - **批量出图必须一进程一杀一 sleep**（`taskkill //F //IM dshnext.exe; sleep 1.2` 再启下一个）。紧循环连开 12 个 `--shot` 进程时，上一个窗口没退干净，`PrintWindow` 会抓到**残留窗口**——表现成某页截成了另一页（首页截出设置页）、或截成 min-size 的 1100×702 残片。出完用「选中项图标是 accent 蓝」这个主题无关的信号逐张校验页面身份，别只看尺寸。

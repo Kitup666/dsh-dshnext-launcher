@@ -552,6 +552,7 @@ pub fn strip<'a, Message: 'a>(
 pub enum ToastKind {
     Ok,
     Err,
+    Warn,
     Info,
 }
 
@@ -574,6 +575,7 @@ pub fn toast_host<'a, Message: 'a>(
         let accent = match t.kind {
             ToastKind::Ok => pal.ok,
             ToastKind::Err => pal.bad,
+            ToastKind::Warn => pal.warn,
             ToastKind::Info => pal.accent,
         };
         let body = row![

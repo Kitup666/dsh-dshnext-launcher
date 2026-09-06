@@ -129,6 +129,10 @@ pub struct Dshnext {
     pub stopping: std::collections::HashSet<String>,
     /// 自动重启在途的 profile：StartProbed 探到端口未释放时走重试而非误开外部服务。
     pub restarting: std::collections::HashSet<String>,
+    /// 等 WebUI 地址（带 token 的 Url 事件）就绪后自动打开浏览器的 profile，
+    /// 值是放弃时刻——裸地址开出来是 404（dsh 的 UI 只挂在 token 路径上），
+    /// 绝不能提前拿 `http://127.0.0.1:{port}` 去开。
+    pub pending_open: std::collections::HashMap<String, Instant>,
     /// 每个 profile 的 (连续崩溃次数, 上次自动重启时刻)——指数退避与上限用。
     pub crash_restarts: std::collections::HashMap<String, (u32, Instant)>,
 
@@ -317,6 +321,7 @@ impl Dshnext {
 
             stopping: std::collections::HashSet::new(),
             restarting: std::collections::HashSet::new(),
+            pending_open: std::collections::HashMap::new(),
             crash_restarts: std::collections::HashMap::new(),
 
             log_filter: crate::pages::console::ALL.to_string(),
@@ -342,12 +347,10 @@ impl Dshnext {
         self.procs.iter().find(|p| p.profile == profile)
     }
 
-    /// 某 profile 的 WebUI 地址：优先用解析到的，退回进程记录。
+    /// 某 profile 可打开的 WebUI 地址：只认 stdout 里解析出来的
+    /// （带 token）那条；进程记录里的裸地址开出来是 404，绝不退回它。
     pub fn url_of(&self, profile: &str) -> Option<String> {
-        self.urls
-            .get(profile)
-            .cloned()
-            .or_else(|| self.running(profile).map(|p| p.url.clone()))
+        self.urls.get(profile).cloned()
     }
 
     /// 设置页是否有未保存改动（上一代靠 JSON 全量比较，这里逐字段比更省）。
