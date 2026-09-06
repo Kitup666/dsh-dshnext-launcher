@@ -70,9 +70,12 @@ fn main() -> iced::Result {
     // wgpu 在 compositor 创建时才读这个变量，晚于 main，所以进程内设置有效。
     // 外部已设 WGPU_BACKEND 或 ICED_BACKEND=tiny-skia 时不覆盖；
     // --all-backends 留给复现阶段 0 的内存归因。
+    // 默认锁 vulkan（同样单后端省 38MB）：dx12 在快速拖边时帧提交追不上
+    // 窗口尺寸，DWM 把上一帧拉伸到新尺寸，「放大再缩小」残影（用户实测
+    // vulkan 全无）；且 vulkan 首帧 ~500ms vs dx12 ~1300ms。
     if !flag("--all-backends") && std::env::var_os("WGPU_BACKEND").is_none() {
         // SAFETY: 单线程启动阶段，尚未创建窗口或后台线程。
-        unsafe { std::env::set_var("WGPU_BACKEND", "dx12") };
+        unsafe { std::env::set_var("WGPU_BACKEND", "vulkan") };
     }
     log::info!(
         "mode={mode:?} WGPU_BACKEND={:?} ICED_BACKEND={:?} shot={:?}",
