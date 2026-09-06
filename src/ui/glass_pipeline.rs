@@ -126,6 +126,15 @@ impl Primitive for GlassQuad {
     ) {
         let s = viewport.scale_factor();
         let rp = *bounds * s; // 物理 px；层变换（滚动/reveal）已由 iced 叠好
+        // 对齐物理像素网格：1.25 缩放下逻辑间距 14/7 之类会产生 17.5 这种
+        // 半像素坐标，1px 描边被两行像素平摊、深底上隐形（用户报的「底边
+        // 白边有时缺失」）。整卡取整，位移 ≤0.5px 不可感知。
+        let rp = Rectangle {
+            x: rp.x.round(),
+            y: rp.y.round(),
+            width: rp.width.round(),
+            height: rp.height.round(),
+        };
 
         let mut u = Uniforms {
             rect: [rp.x, rp.y, rp.width, rp.height],
