@@ -104,14 +104,14 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         container(page_body)
             .width(Fill)
             .height(Fill)
-            .padding(Padding::from(44).top(36))
+            .padding(Padding::from(44).top(44))
             .into()
     } else {
         scrollable(
             container(page_body)
                 .width(Fill)
                 .height(Fill)
-                .padding(Padding::from(44).top(36)),
+                .padding(Padding::from(44).top(44)),
         )
         .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
         .style(widgets::slim_scroll_style(pal))
@@ -209,17 +209,18 @@ fn ambient(pal: &'static Palette) -> Element<'static, Message> {
     crate::ui::glass_pipeline::background_field(glow_mesh::ambient_specs(pal))
 }
 
-/// 品牌块（logo + 名称 + 副标题）：住在**通栏标题栏左端**（2026-09-06 用户定，
-/// 架构 = 通栏标题栏 / 侧边栏 / 内容区三段）。logo 是与 exe 图标同源的插画，
-/// 圆角烘在 PNG 的 alpha 里（image widget 本身不支持圆角），角上透出的是
-/// 环境光渐变，不是黑块。Handle 必须全局单例：image::Handle::from_bytes 的
-/// id 是 Id::unique()，在 view() 里现造会每次都变成「新图」，缓存穿透导致
-/// 悬停时闪烁（svg 的 from_memory 按内容 hash 没这个问题，见 AGENTS.md 坑 27）。
+/// 品牌块（logo + 名称 + 副标题）：**侧边栏头部单元**，宽 = 侧边栏、贴窗口
+/// 左上角，高度 = TITLEBAR_H（2026-09-06 用户示意稿定）。logo 是与 exe 图标
+/// 同源的插画，圆角烘在 PNG 的 alpha 里（image widget 本身不支持圆角），角上
+/// 透出的是环境光渐变，不是黑块。Handle 必须全局单例：image::Handle::
+/// from_bytes 的 id 是 Id::unique()，在 view() 里现造会每次都变成「新图」，
+/// 缓存穿透导致悬停时闪烁（svg 的 from_memory 按内容 hash 没这个问题，
+/// 见 AGENTS.md 坑 27）。
 fn brand<'a>(pal: &'static Palette) -> Element<'a, Message> {
     row![
         iced::widget::image::Image::new(brand_handle())
-            .width(Length::Fixed(26.0))
-            .height(Length::Fixed(26.0)),
+            .width(Length::Fixed(34.0))
+            .height(Length::Fixed(34.0)),
         column![
             txt_bold("DshDesk").size(FS_TITLE).color(pal.text),
             txt("DeepSeek Harness 启动器").size(FS_MICRO).color(pal.text_3),
@@ -281,7 +282,7 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     )
     .width(Length::Fixed(232.0))
     .height(Fill)
-    .padding(Padding::from(14).top(10).bottom(16))
+    .padding(Padding::from(14).top(12).bottom(16))
     .style(move |_theme: &Theme| container::Style {
         text_color: Some(pal.text),
         // 透明：环境光在下层铺满整窗，这里填色会切出一道硬边。

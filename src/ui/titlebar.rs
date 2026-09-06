@@ -14,8 +14,13 @@ use crate::ui::txt_bold;
 use iced::widget::{Row, container, mouse_area, row, space};
 use iced::window::Direction;
 use iced::{Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme};
-/// 标题栏高度（逻辑像素）。比系统的 32px 高一点，给拖动留足热区。
-pub const TITLEBAR_H: f32 = 38.0;
+/// 顶栏高度（逻辑像素）。品牌块作为**侧边栏头部单元**住在左段（宽 = 侧边栏
+/// 232），右段是内容区上方的拖动条 + 窗口按钮——两段同高构成一行。64 给
+/// 头部单元一个从容的呼吸档（logo 34 + 双行文字居中），也与用户示意稿的
+/// 蓝框（~232×69）同感。
+pub const TITLEBAR_H: f32 = 64.0;
+/// 侧边栏宽度——头部单元与它对齐（pages/mod.rs 的 sidebar 同款值）。
+pub const SIDEBAR_W: f32 = 232.0;
 /// 边缘缩放热区宽度。6px 是 Windows 原生无边框应用的常用值：够点中，又不至于误触。
 const GRIP: f32 = 6.0;
 
@@ -27,9 +32,9 @@ pub struct Actions<Message> {
     pub close: Message,
 }
 
-/// 自绘标题栏：**通栏**（横跨整个窗口宽度，含侧边栏上方）。左侧是品牌块
-/// （logo + 名称，随标题栏可拖动），中间整条空白可拖动（不画标题文字——
-/// 品牌区已经说过一次，标题栏再说是重复），右侧三个窗口按钮。
+/// 顶栏：**左段**是品牌头部单元（宽 = 侧边栏，随拖动区），**右段**是内容区
+/// 上方的拖动条 + 三个窗口按钮。两段同高同排，视觉上是一条顶带；分隔线
+/// 从顶带下方才开始（侧边栏与内容区之间）。
 pub fn titlebar<'a, Message: Clone + 'a>(
     pal: &'static Palette,
     brand: Element<'a, Message>,
@@ -46,15 +51,18 @@ pub fn titlebar<'a, Message: Clone + 'a>(
         close,
     } = actions;
 
-    // 品牌块也在拖动热区里（非交互元素，按下即拖窗，资源管理器惯例）。
-    let brand_grab = mouse_area(
+    // 品牌头部单元：宽 = 侧边栏，内容左对齐（与侧边栏 14px 内距同款），
+    // 整块是拖动热区（非交互元素，按下即拖窗，资源管理器惯例）。
+    let brand_cell = mouse_area(
         container(brand)
-            .height(Fill)
-            .padding(Padding::from(0.0).left(14.0)),
+            .width(Length::Fixed(SIDEBAR_W))
+            .height(TITLEBAR_H)
+            .padding(Padding::from(0.0).left(14.0))
+            .align_y(Alignment::Center),
     )
     .on_press(drag.clone());
 
-    // 可拖动区：品牌右侧整条空白都能抓。
+    // 可拖动区：头部单元右侧整条空白都能抓。
     let grab = mouse_area(
         container(space::Space::new())
             .height(Fill)
@@ -79,7 +87,7 @@ pub fn titlebar<'a, Message: Clone + 'a>(
     .spacing(2)
     .align_y(Alignment::Center);
 
-    container(row![brand_grab, grab, buttons].align_y(Alignment::Center))
+    container(row![brand_cell, grab, buttons].align_y(Alignment::Center))
         .width(Fill)
         .height(TITLEBAR_H)
         .padding(Padding::from(0.0).right(6.0))
