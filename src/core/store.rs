@@ -75,6 +75,12 @@ pub fn config_path() -> PathBuf {
     data_dir().join("config.json")
 }
 
+/// 离线安装包目录约定：`<data_dir>/offline/`。放 `node-*.zip`、`dsh*.tgz`、
+/// `pnpm*.tgz`，环境页检测到就提供「离线安装」（roadmap #9，断网可装）。
+pub fn offline_dir() -> PathBuf {
+    data_dir().join("offline")
+}
+
 pub fn load() -> Config {
     fs::read(config_path())
         .ok()

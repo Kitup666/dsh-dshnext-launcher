@@ -114,6 +114,9 @@ pub struct Dshnext {
     /// 请求飞在半路时它还是空的，反复进环境页会重复发请求。
     pub versions_loading: bool,
 
+    // ---- 环境页离线包（roadmap #9）：进环境页时扫描 offline 目录 ----
+    pub offline: Option<crate::core::installs::OfflinePacks>,
+
     // ---- 插件页 ----
     pub plugins: Vec<PluginInfo>,
     pub market: Vec<MarketItem>,
@@ -194,6 +197,12 @@ pub enum Message {
     InstallNode,
     InstallDsh,
     InstallPnpm,
+    /// 离线安装（包在 data/offline/），参数是包文件路径。
+    InstallNodeOffline(std::path::PathBuf),
+    InstallDshOffline(std::path::PathBuf),
+    InstallPnpmOffline(std::path::PathBuf),
+    ScanOffline,
+    OfflineScanned(crate::core::installs::OfflinePacks),
     /// 安装/卸载类操作的统一回调：(动作名, 结果)。
     OpDone(&'static str, Result<(), String>),
 
@@ -297,6 +306,8 @@ impl Dshnext {
             node_pick: crate::core::envres::DEFAULT_NODE_VERSION.into(),
             include_rc: true,
             versions_loading: false,
+
+            offline: None,
 
             plugins: Vec::new(),
             market: Vec::new(),

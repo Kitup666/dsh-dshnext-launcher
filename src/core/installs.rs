@@ -130,32 +130,10 @@ pub async fn install_node(tx: EventSink, cfg: Config, version: String) -> Result
     let tx2 = tx.clone();
     let task = "node".to_string();
     let target2 = target.clone();
-    let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let f = std::fs::File::open(&zip_path).map_err(|e| e.to_string())?;
-        let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip 打开失败: {e}"))?;
-        std::fs::create_dir_all(&target2).map_err(|e| e.to_string())?;
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-            let name = entry.name().to_string();
-            // strip 首层目录 node-vXX-win-x64/
-            let rel = match name.split_once('/') {
-                Some((_, rest)) if !rest.is_empty() => rest.to_string(),
-                _ => continue,
-            };
-            let dest = target2.join(&rel);
-            if entry.is_dir() {
-                std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-            } else {
-                if let Some(p) = dest.parent() {
-                    std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
-                }
-                let mut out = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
-                std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
-            }
-        }
-        emit_lines(&tx2, &task, "Node.js 解压完成");
-        let _ = std::fs::remove_file(&zip_path);
-        Ok(())
+    let result = tokio::task::spawn_blocking(move || {
+        extract_node_zip(&zip_path, &target2, &tx2, &task).map(|_| {
+            let _ = std::fs::remove_file(&zip_path);
+        })
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -164,6 +142,142 @@ pub async fn install_node(tx: EventSink, cfg: Config, version: String) -> Result
         return Err("解压完成但未找到 node.exe".into());
     }
     Ok(())
+}
+
+/// 解压便携 Node zip（strip 首层目录），下载版与离线版共用。
+fn extract_node_zip(
+    zip_path: &std::path::Path,
+    target: &std::path::Path,
+    tx: &EventSink,
+    task: &str,
+) -> Result<(), String> {
+    let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip 打开失败: {e}"))?;
+    std::fs::create_dir_all(target).map_err(|e| e.to_string())?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        // strip 首层目录 node-vXX-win-x64/
+        let rel = match name.split_once('/') {
+            Some((_, rest)) if !rest.is_empty() => rest.to_string(),
+            _ => continue,
+        };
+        let dest = target.join(&rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(p) = dest.parent() {
+                std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+            }
+            let mut out = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
+            std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+        }
+    }
+    emit_lines(tx, task, "Node.js 解压完成");
+    Ok(())
+}
+
+// ---- 离线安装（roadmap #9）：包由用户放进 store::offline_dir()，断网可装 ----
+
+/// 离线包扫描结果：三类包各至多一个（同名取字典序最大——新版优先）。
+#[derive(Debug, Clone, Default)]
+pub struct OfflinePacks {
+    pub node: Option<std::path::PathBuf>,
+    pub dsh: Option<std::path::PathBuf>,
+    pub pnpm: Option<std::path::PathBuf>,
+}
+
+impl OfflinePacks {
+    pub fn any(&self) -> bool {
+        self.node.is_some() || self.dsh.is_some() || self.pnpm.is_some()
+    }
+}
+
+/// 扫描离线包目录。命名约定：`node-*.zip` / `dsh*.tgz` / `pnpm*.tgz`。
+pub fn scan_offline() -> OfflinePacks {
+    let mut packs = OfflinePacks::default();
+    let Ok(rd) = std::fs::read_dir(crate::core::store::offline_dir()) else {
+        return packs;
+    };
+    let mut names: Vec<_> = rd.flatten().map(|e| e.path()).collect();
+    names.sort();
+    for p in names {
+        let Some(name) = p.file_name().map(|n| n.to_string_lossy().to_lowercase()) else {
+            continue;
+        };
+        if name.starts_with("node-") && name.ends_with(".zip") {
+            packs.node = Some(p);
+        } else if name.starts_with("dsh") && (name.ends_with(".tgz") || name.ends_with(".tar.gz")) {
+            packs.dsh = Some(p);
+        } else if name.starts_with("pnpm") && (name.ends_with(".tgz") || name.ends_with(".tar.gz")) {
+            packs.pnpm = Some(p);
+        }
+    }
+    packs
+}
+
+/// 从离线 zip 装便携 Node（跳过下载）。
+pub async fn install_node_offline(tx: EventSink, zip: std::path::PathBuf) -> Result<(), String> {
+    let target = node_dir();
+    if target.join("node.exe").exists() {
+        return Err("便携 Node 已存在，请先删除 runtime/node 再安装".into());
+    }
+    if !zip.exists() {
+        return Err("离线包文件不存在（被移动或删除？）".into());
+    }
+    let tx2 = tx.clone();
+    let task = "node".to_string();
+    let target2 = target.clone();
+    let zip2 = zip.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        extract_node_zip(&zip2, &target2, &tx2, &task)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    result?;
+    if !target.join("node.exe").exists() {
+        return Err("解压完成但未找到 node.exe".into());
+    }
+    emit_lines(&tx, "node", &format!("离线安装自 {}", zip.display()));
+    Ok(())
+}
+
+/// 从离线 tgz 装 dsh（npm install -g 本地包，跳过 registry）。
+pub async fn install_dsh_offline(
+    tx: EventSink,
+    cfg: Config,
+    tgz: std::path::PathBuf,
+) -> Result<(), String> {
+    if !tgz.exists() {
+        return Err("离线包文件不存在（被移动或删除？）".into());
+    }
+    let mut cmd = npm_cmd(&cfg);
+    cmd.arg("install").arg("-g").arg("--prefix").arg(dsh_prefix());
+    cmd.arg(format!("--allow-scripts={DSH_ALLOW_SCRIPTS}"));
+    cmd.arg(&tgz);
+    std::fs::create_dir_all(dsh_prefix()).map_err(|e| e.to_string())?;
+    let task = "dsh".to_string();
+    tokio::task::spawn_blocking(move || run_streaming(tx, task, cmd))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 从离线 tgz 装 pnpm。
+pub async fn install_pnpm_offline(
+    tx: EventSink,
+    cfg: Config,
+    tgz: std::path::PathBuf,
+) -> Result<(), String> {
+    if !tgz.exists() {
+        return Err("离线包文件不存在（被移动或删除？）".into());
+    }
+    let mut cmd = npm_cmd(&cfg);
+    cmd.arg("install").arg("-g").arg("--prefix").arg(dsh_prefix());
+    cmd.arg(&tgz);
+    let task = "pnpm".to_string();
+    tokio::task::spawn_blocking(move || run_streaming(tx, task, cmd))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 把 dsh 安装/更新到托管前缀（version 传 "latest" 或精确版本号）

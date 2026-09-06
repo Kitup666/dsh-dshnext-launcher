@@ -44,10 +44,84 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         ));
     }
 
+    if let Some(packs) = &app.offline {
+        if packs.any() {
+            body = body.push(offline_card(app, packs, pal));
+        }
+    }
+
     body = body
         .push(detect_card(app, pal))
         .push(data_dir_card(app, pal));
     widgets::page_stack(head, body).into()
+}
+
+/// 离线安装卡（roadmap #9）：`<数据目录>\offline\` 里有约定命名的包才出现。
+/// 断网机器把 node-*.zip / dsh*.tgz / pnpm*.tgz 拷进来即可完成全套部署。
+fn offline_card<'a>(
+    app: &'a Dshnext,
+    packs: &'a crate::core::installs::OfflinePacks,
+    pal: &'static Palette,
+) -> Element<'a, Message> {
+    let busy = app.busy.is_some();
+    let fname = |p: Option<&std::path::PathBuf>| {
+        p.and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let mut col = column![
+        card::card_title("离线安装"),
+        card::card_sub(
+            format!(
+                "在离线包目录 {} 里放了安装包，可跳过在线下载直接安装。",
+                crate::core::store::offline_dir().display()
+            ),
+            pal
+        ),
+        space::vertical().height(6.0),
+    ];
+    let mut row_offline = |col: Column<'a, Message>, name: String, msg: Message, key: &'static str| {
+        col.push(widgets::list_row(
+            None,
+            column![mono(name)],
+            row![action_btn(
+                app,
+                key,
+                "离线安装",
+                crate::ui::button::Variant::Accent,
+                (!busy).then_some(msg),
+                pal
+            )]
+            .into(),
+            false,
+            pal,
+        ))
+    };
+    if let Some(p) = &packs.node {
+        col = row_offline(
+            col,
+            fname(Some(p)),
+            Message::InstallNodeOffline(p.clone()),
+            "env.off.node",
+        );
+    }
+    if let Some(p) = &packs.dsh {
+        col = row_offline(
+            col,
+            fname(Some(p)),
+            Message::InstallDshOffline(p.clone()),
+            "env.off.dsh",
+        );
+    }
+    if let Some(p) = &packs.pnpm {
+        col = row_offline(
+            col,
+            fname(Some(p)),
+            Message::InstallPnpmOffline(p.clone()),
+            "env.off.pnpm",
+        );
+    }
+    card::card(col.spacing(4), pal)
 }
 
 /// 检测结果卡：Node / dsh / pnpm 三行 + 预发布开关。

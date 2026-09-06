@@ -56,6 +56,9 @@ theme.rs（令牌，叶子）
 | `installs.rs` | 220 | Node 下载解压、dsh/pnpm 安装 |
 | `procman.rs` | 192 | spawn dsh（CREATE_NO_WINDOW）、日志转发、`taskkill /T /F` 杀树、`ProcMap` |
 | `plugins.rs` | 240 | 插件装卸、npm `keywords:dsh-plugin` 市场检索 |
+| `platform.rs` | ~110 | reg.exe 封装（自启/主题探测）、端口探测（Free/Http/Other）、系统名 | OBSERVED |
+| `diag.rs` | ~150 | 脱敏诊断报告（Key 只出长度）；导出到「文档」目录 | OBSERVED |
+| `selfupdate.rs` | ~180 | 自更新：Releases 查版 → 下载 → SHA256（PowerShell）→ 换身 .old | OBSERVED |
 
 ### 2.3 UI 层（`ui/`，自造组件 + 渲染管线）
 
@@ -75,6 +78,8 @@ theme.rs（令牌，叶子）
 | `glass_pipeline.rs` | 568 | **自定义 wgpu primitive 管线**（iced_wgpu 0.14 官方通路）：`GlassQuad{Kind::{Background,Card,Veil}}` → `glass.wgsl` 三模式；`background_field()` 环境光、`fade_veil()` 滚动渐隐帏幕 | OBSERVED |
 | `glass.wgsl` | — | 单 fragment 三分支：0=背景球场、1=卡片（sheen→渐变→球场→sRGB 灰修正→颗粒→SDF 圆角描边）、2=帏幕（不透明背景场 + 锚定边 smoothstep alpha 坡道） | 帏幕约定：`sheen`=bg 色、`grain_tile.x`=带高物理 px、`grain_tile.y`=方向旗 OBSERVED |
 | `glow_mesh.rs` | 183 | `ambient_specs(pal)` 两光球参数唯一来源（窗口绝对坐标，时钟冻结 40.0）；tiny-skia 回退用 Mesh::Solid 扇形 | OBSERVED |
+| `tray.rs`（src/） | ~140 | 系统托盘（tray-icon 0.24）：thread_local 持有（TrayIcon !Send），事件流轮询全局 channel | OBSERVED |
+| `win32.rs`（src/） | ~70 | 窗口显隐（iced 无 hide/show）：FindWindowW 按标题 + ShowWindow + AttachThreadInput 前置 | OBSERVED |
 
 ### 2.4 外壳布局（`pages/mod.rs`，507 行）
 

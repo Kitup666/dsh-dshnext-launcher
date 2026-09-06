@@ -144,9 +144,14 @@ impl Dshnext {
                 if page == Page::Plugins && !self.selected.is_empty() {
                     return Task::done(Message::RefreshPlugins);
                 }
-                // 进环境页时拉版本列表，只拉一次（在途请求也算已拉）。
-                if page == Page::Env && self.dsh_versions.is_empty() && !self.versions_loading {
-                    return Task::done(Message::LoadVersions);
+                // 进环境页时拉版本列表，只拉一次（在途请求也算已拉）；
+                // 顺带扫离线包目录（便宜：一次 read_dir）。
+                if page == Page::Env {
+                    let mut t = vec![Task::done(Message::ScanOffline)];
+                    if self.dsh_versions.is_empty() && !self.versions_loading {
+                        t.push(Task::done(Message::LoadVersions));
+                    }
+                    return Task::batch(t);
                 }
                 Task::none()
             }
@@ -318,10 +323,12 @@ impl Dshnext {
             Message::RefreshEnv => {
                 let cfg = self.config.clone();
                 // status() 跑三次 `xx --version`，每次最多 20s，必须异步。
+                // 顺带扫离线包目录（--page env 不走 Goto，这里兜底）。
                 Task::perform(
                     async move { crate::core::envres::status(&cfg).await },
                     Message::EnvLoaded,
                 )
+                .chain(Task::done(Message::ScanOffline))
             }
             Message::EnvLoaded(env) => {
                 self.env = Some(env);
@@ -399,6 +406,49 @@ impl Dshnext {
                     |r| Message::OpDone("安装 dsh", r),
                 )
             }
+            Message::InstallNodeOffline(zip) => {
+                self.busy = Some("正在离线安装便携版 Node.js".into());
+                self.sys_log("env", format!("离线安装 Node：{}", zip.display()));
+                let tx = bridge::sink();
+                Task::perform(
+                    async move { crate::core::installs::install_node_offline(tx, zip).await },
+                    |r| Message::OpDone("离线安装 Node.js", r),
+                )
+            }
+            Message::InstallDshOffline(tgz) => {
+                self.busy = Some("正在离线安装 dsh".into());
+                self.sys_log("env", format!("离线安装 dsh：{}", tgz.display()));
+                let tx = bridge::sink();
+                let cfg = self.config.clone();
+                Task::perform(
+                    async move { crate::core::installs::install_dsh_offline(tx, cfg, tgz).await },
+                    |r| Message::OpDone("离线安装 dsh", r),
+                )
+            }
+            Message::InstallPnpmOffline(tgz) => {
+                self.busy = Some("正在离线安装 pnpm".into());
+                self.sys_log("env", format!("离线安装 pnpm：{}", tgz.display()));
+                let tx = bridge::sink();
+                let cfg = self.config.clone();
+                Task::perform(
+                    async move { crate::core::installs::install_pnpm_offline(tx, cfg, tgz).await },
+                    |r| Message::OpDone("离线安装 pnpm", r),
+                )
+            }
+            Message::ScanOffline => {
+                Task::perform(
+                    async {
+                        tokio::task::spawn_blocking(crate::core::installs::scan_offline)
+                            .await
+                            .unwrap_or_default()
+                    },
+                    Message::OfflineScanned,
+                )
+            }
+            Message::OfflineScanned(packs) => {
+                self.offline = Some(packs);
+                Task::none()
+            }
             Message::InstallPnpm => {
                 self.busy = Some("正在安装 pnpm".into());
                 self.sys_log("env", "正在安装 pnpm");
@@ -418,6 +468,7 @@ impl Dshnext {
                         Task::batch([
                             Task::done(Message::RefreshEnv),
                             Task::done(Message::RefreshProfiles),
+                            Task::done(Message::ScanOffline),
                         ])
                     }
                     Err(e) => {
