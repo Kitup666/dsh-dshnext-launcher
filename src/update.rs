@@ -378,19 +378,59 @@ impl Dshnext {
                 Task::none()
             }
             Message::Start(profile) => {
-                self.busy = Some(format!("正在启动 {profile}…"));
-                let tx = bridge::sink();
-                let procs = bridge::procs();
-                let cfg = self.config.clone();
+                // 先探测端口再 spawn：活动 web 服务可复用、半死进程提前报错，
+                // 别等 dsh 绑定失败再翻日志（对齐 WEP-56 的复用策略）。
                 let port = self.config.port;
                 Task::perform(
                     async move {
-                        crate::core::procman::start(tx, &procs, &cfg, &profile, port)
-                            .await
-                            .map(|url| (profile, url))
+                        tokio::task::spawn_blocking(move || {
+                            crate::core::platform::probe_port(port)
+                        })
+                        .await
+                        .unwrap_or(crate::core::platform::PortProbe::Other)
                     },
-                    Message::Started,
+                    move |probe| Message::StartProbed(profile, probe),
                 )
+            }
+            Message::StartProbed(profile, probe) => {
+                let port = self.config.port;
+                // 端口上的服务是不是我们自己跑的实例（按 URL 里的端口认）。
+                let own = self
+                    .procs
+                    .iter()
+                    .any(|p| p.url.contains(&format!(":{port}")));
+                match probe {
+                    crate::core::platform::PortProbe::Free => {
+                        self.busy = Some(format!("正在启动 {profile}…"));
+                        let tx = bridge::sink();
+                        let procs = bridge::procs();
+                        let cfg = self.config.clone();
+                        Task::perform(
+                            async move {
+                                crate::core::procman::start(tx, &procs, &cfg, &profile, port)
+                                    .await
+                                    .map(|url| (profile, url))
+                            },
+                            Message::Started,
+                        )
+                    }
+                    crate::core::platform::PortProbe::Http if !own => {
+                        self.notify(
+                            ToastKind::Info,
+                            format!("端口 {port} 已有 Web 服务在运行，直接打开它"),
+                        );
+                        Task::done(Message::OpenPath(format!("http://127.0.0.1:{port}")))
+                    }
+                    _ => {
+                        let msg = if own {
+                            format!("端口 {port} 已被正在运行的实例占用，改端口或先停止它")
+                        } else {
+                            format!("端口 {port} 被其他程序占用且不是 Web 服务，改端口后再启动")
+                        };
+                        self.notify(ToastKind::Err, msg);
+                        Task::none()
+                    }
+                }
             }
             Message::Started(result) => {
                 self.busy = None;
@@ -598,6 +638,64 @@ impl Dshnext {
                 self.cfg_draft.plugin_catalog_url = v;
                 Task::none()
             }
+            Message::ExportDiag => {
+                // 日志尾部在这里预格式化（LogLine 属于 app 层，diag 保持不依赖它）。
+                let log_tail: Vec<String> = self
+                    .logs
+                    .iter()
+                    .rev()
+                    .take(200)
+                    .rev()
+                    .map(|l| {
+                        let t = l.ts / 1000;
+                        format!(
+                            "{:02?}:{:02?}:{:02?} [{:?}] {}",
+                            (t / 3600) % 24,
+                            (t / 60) % 60,
+                            t % 60,
+                            l.stream,
+                            l.line
+                        )
+                    })
+                    .collect();
+                let text = crate::core::diag::render(
+                    &self.config,
+                    self.env.as_ref(),
+                    &self.profiles,
+                    &self.procs,
+                    &log_tail,
+                    env!("CARGO_PKG_VERSION"),
+                    &crate::core::platform::os_pretty(),
+                );
+                let path = crate::core::diag::target_path();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            std::fs::write(&path, &text)
+                                .map(|_| path.clone())
+                                .map_err(|e| e.to_string())
+                        })
+                        .await
+                        .map_err(|e| e.to_string())?
+                    },
+                    Message::DiagExported,
+                )
+            }
+            Message::DiagExported(result) => match result {
+                Ok(path) => {
+                    self.notify(
+                        ToastKind::Ok,
+                        format!("诊断已导出：{}", path.display()),
+                    );
+                    let dir = path.parent().map(|d| d.to_path_buf());
+                    dir.map(|d| Task::done(Message::OpenPath(d.display().to_string())))
+                        .unwrap_or_else(Task::none)
+                }
+                Err(e) => {
+                    self.notify(ToastKind::Err, format!("诊断导出失败：{e}"));
+                    Task::none()
+                }
+            },
             Message::ToggleShowKey => {
                 self.show_key = !self.show_key;
                 Task::none()

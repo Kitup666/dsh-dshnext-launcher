@@ -288,6 +288,14 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
                     link("ab.site", "DeepSeek Harness 官网", "https://www.deepseek.com/harness/"),
                     link("ab.gh", "GitHub 仓库", "https://github.com/deepseek-ai/deepseek-harness"),
                     link("ab.plugins", "社区插件", "https://www.npmjs.com/search?q=keywords:dsh-plugin"),
+                    button::btn(
+                        Spec::new("ab.diag", "导出诊断", Variant::Secondary).size(BtnSize::Small),
+                        pal,
+                        &app.anim,
+                        Some(Message::ExportDiag),
+                        Some(Message::HoverEnter("ab.diag")),
+                        Some(Message::HoverExit("ab.diag")),
+                    ),
                 ]
                 .spacing(10),
             )

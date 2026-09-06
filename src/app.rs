@@ -190,6 +190,8 @@ pub enum Message {
     RefreshProfiles,
     ProfilesLoaded(Result<Vec<ProfileInfo>, String>),
     Start(String),
+    /// 启动前的端口探测结果：Free 才真正 spawn，Http 复用打开，Other 警告。
+    StartProbed(String, crate::core::platform::PortProbe),
     Started(Result<(String, String), String>),
     Stop(String),
     Stopped(Result<String, String>),
@@ -214,6 +216,9 @@ pub enum Message {
     CopyLogs,
 
     // 设置
+    /// 导出脱敏诊断文件（设置页「关于」卡）。
+    ExportDiag,
+    DiagExported(Result<std::path::PathBuf, String>),
     CfgApiKey(String),
     CfgPort(String),
     CfgAutoOpen(bool),

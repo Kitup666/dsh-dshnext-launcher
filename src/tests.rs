@@ -291,6 +291,16 @@ fn show_key_toggles_label() {
 // ---------------------------------------------------------------- 首页启动/停止
 
 #[test]
+fn diag_export_redacts_api_key() {
+    let mut cfg = crate::core::store::Config::default();
+    cfg.api_key = "sk-very-secret-1234567890abcdef".into();
+    let text =
+        crate::core::diag::render(&cfg, None, &[], &[], &[], env!("CARGO_PKG_VERSION"), "test-os");
+    assert!(!text.contains("sk-very-secret"), "诊断报告绝不能包含 Key 内容");
+    assert!(text.contains("已设置（31 字符"), "应只出现长度：{text}");
+}
+
+#[test]
 fn home_start_emits_start_message() {
     let mut a = seeded_app();
     a.page = Page::Home;
@@ -299,9 +309,15 @@ fn home_start_emits_start_message() {
         |m| matches!(m, Message::Start(p) if p == "demo"),
         "Start(demo)",
     );
-    // 真实启动在 Task 里，测试不执行；只验证消息与状态置忙。
+    // 启动是两阶段：Start 只发端口探测，StartProbed(Free) 才置忙 spawn。
+    // 测试不执行 Task（不真探测/不真起进程），手动喂 Free 走到置忙那步。
     a.update(msg);
-    assert!(a.busy.is_some(), "启动后应置忙");
+    assert!(a.busy.is_none(), "探测阶段还不应置忙");
+    a.update(Message::StartProbed(
+        "demo".into(),
+        crate::core::platform::PortProbe::Free,
+    ));
+    assert!(a.busy.is_some(), "探测通过后应置忙");
 }
 
 #[test]
