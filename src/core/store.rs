@@ -33,6 +33,8 @@ pub struct Config {
     pub tray: bool,
     /// 启动器更新源（GitHub Releases API 地址），空 = 不检查更新
     pub update_url: String,
+    /// harness 异常退出时自动重启（指数退避，最多连 3 次）
+    pub auto_restart: bool,
     /// 上次关闭时的窗口几何，开窗恢复
     pub window: Option<WindowGeom>,
 }
@@ -51,6 +53,7 @@ impl Default for Config {
             autostart: false,
             tray: false,
             update_url: String::new(),
+            auto_restart: false,
             window: None,
         }
     }

@@ -121,6 +121,14 @@ pub struct Dshnext {
     pub plugin_tab: PluginTab,
     pub query: String,
 
+    // ---- 运行守护 ----
+    /// 用户点了「停止」的 profile：Exit 事件到达时据此区分主动停 vs 崩溃。
+    pub stopping: std::collections::HashSet<String>,
+    /// 自动重启在途的 profile：StartProbed 探到端口未释放时走重试而非误开外部服务。
+    pub restarting: std::collections::HashSet<String>,
+    /// 每个 profile 的 (连续崩溃次数, 上次自动重启时刻)——指数退避与上限用。
+    pub crash_restarts: std::collections::HashMap<String, (u32, Instant)>,
+
     // ---- 控制台页 ----
     /// `pages::console::ALL` 或某个 profile 名。
     pub log_filter: String,
@@ -234,6 +242,7 @@ pub enum Message {
     CfgAutoStart(bool),
     CfgTray(bool),
     CfgUpdateUrl(String),
+    CfgAutoRestart(bool),
     CfgNodeMirror(String),
     CfgNpmRegistry(String),
     CfgCatalog(String),
@@ -295,6 +304,10 @@ impl Dshnext {
             plugin_tab: PluginTab::Installed,
             query: String::new(),
 
+            stopping: std::collections::HashSet::new(),
+            restarting: std::collections::HashSet::new(),
+            crash_restarts: std::collections::HashMap::new(),
+
             log_filter: crate::pages::console::ALL.to_string(),
             auto_scroll: true,
 
@@ -336,6 +349,7 @@ impl Dshnext {
             || a.autostart != b.autostart
             || a.tray != b.tray
             || a.update_url != b.update_url
+            || a.auto_restart != b.auto_restart
             || a.node_mirror != b.node_mirror
             || a.npm_registry != b.npm_registry
             || a.plugin_catalog_url != b.plugin_catalog_url

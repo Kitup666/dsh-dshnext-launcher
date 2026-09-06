@@ -213,6 +213,10 @@ impl Dshnext {
                 self.cfg_draft.update_url = v;
                 Task::none()
             }
+            Message::CfgAutoRestart(v) => {
+                self.cfg_draft.auto_restart = v;
+                Task::none()
+            }
             Message::CheckUpdate => {
                 let url = self.config.update_url.clone();
                 Task::perform(crate::core::selfupdate::latest(url), Message::UpdateChecked)
@@ -477,6 +481,9 @@ impl Dshnext {
                     .procs
                     .iter()
                     .any(|p| p.url.contains(&format!(":{port}")));
+                // 这次 Start 是自动重启在途？端口被崩掉的实例残留占用时别误开
+                // 「现有服务」，改走退避重试（计数并入崩溃序列，连 3 次封顶）。
+                let via_restart = self.restarting.contains(&profile);
                 match probe {
                     crate::core::platform::PortProbe::Free => {
                         self.busy = Some(format!("正在启动 {profile}…"));
@@ -492,14 +499,39 @@ impl Dshnext {
                             Message::Started,
                         )
                     }
-                    crate::core::platform::PortProbe::Http if !own => {
+                    crate::core::platform::PortProbe::Http if !own && !via_restart => {
                         self.notify(
                             ToastKind::Info,
                             format!("端口 {port} 已有 Web 服务在运行，直接打开它"),
                         );
                         Task::done(Message::OpenPath(format!("http://127.0.0.1:{port}")))
                     }
+                    crate::core::platform::PortProbe::Http if via_restart => {
+                        // 崩掉的实例残留子进程还占着口：退避重试，计数并入序列。
+                        self.restarting.insert(profile.clone());
+                        self.notify(
+                            ToastKind::Info,
+                            format!("端口 {port} 尚未释放，5s 后重试自动重启"),
+                        );
+                        let e = self
+                            .crash_restarts
+                            .entry(profile.clone())
+                            .or_insert((0, Instant::now()));
+                        let (count, _) = *e;
+                        *e = (count + 1, Instant::now());
+                        if count + 1 >= 3 {
+                            self.restarting.remove(&profile);
+                            self.notify(ToastKind::Err, format!("{profile} 端口持续未释放，停止自动重启"));
+                            Task::none()
+                        } else {
+                            Task::perform(
+                                async move { tokio::time::sleep(Duration::from_secs(5)).await },
+                                move |_| Message::Start(profile),
+                            )
+                        }
+                    }
                     _ => {
+                        self.restarting.remove(&profile);
                         let msg = if own {
                             format!("端口 {port} 已被正在运行的实例占用，改端口或先停止它")
                         } else {
@@ -515,6 +547,7 @@ impl Dshnext {
                 match result {
                     Ok((profile, url)) => {
                         self.urls.insert(profile.clone(), url.clone());
+                        self.crash_restarts.remove(&profile);
                         self.notify(ToastKind::Info, format!("正在启动 {profile}…"));
                         let mut tasks = vec![Task::done(Message::PollProcs)];
                         let is_e2e = std::env::args().any(|a| a == "--e2e");
@@ -536,6 +569,7 @@ impl Dshnext {
                 }
             }
             Message::Stop(profile) => {
+                self.stopping.insert(profile.clone());
                 self.busy = Some(format!("正在停止 {profile}…"));
                 let tx = bridge::sink();
                 let procs = bridge::procs();
@@ -949,8 +983,47 @@ impl Dshnext {
             }
             CoreEvent::Exit { profile, code } => {
                 self.sys_log(&profile, format!("进程已退出（退出码 {code}）"));
+                // 稳定跑了 2 分钟以上的算「新的崩溃序列」——重启计数清零。
+                let uptime = self
+                    .procs
+                    .iter()
+                    .find(|p| p.profile == profile)
+                    .map(|p| p.uptime_secs)
+                    .unwrap_or(0);
+                if uptime > 120 {
+                    self.crash_restarts.remove(&profile);
+                }
                 self.procs.retain(|p| p.profile != profile);
                 self.urls.remove(&profile);
+                if self.stopping.remove(&profile) {
+                    // 主动停止，走完收尾。
+                } else if code != 0 && self.config.auto_restart {
+                    // 崩溃自愈（roadmap #8）：指数退避 2^n 秒，连 3 次封顶。
+                    const MAX: u32 = 3;
+                    let e = self
+                        .crash_restarts
+                        .entry(profile.clone())
+                        .or_insert((0, Instant::now()));
+                    let (count, _) = *e;
+                    if count >= MAX {
+                        self.notify(
+                            ToastKind::Err,
+                            format!("{profile} 已连续崩溃 {MAX} 次，停止自动重启"),
+                        );
+                    } else {
+                        *e = (count + 1, Instant::now());
+                        let delay = 2u64.pow(count + 1);
+                        self.notify(
+                            ToastKind::Info,
+                            format!("{profile} 异常退出，{delay}s 后自动重启（第 {}/{MAX} 次）", count + 1),
+                        );
+                        self.restarting.insert(profile.clone());
+                        return Task::perform(
+                            async move { tokio::time::sleep(Duration::from_secs(delay)).await },
+                            move |_| Message::Start(profile),
+                        );
+                    }
+                }
             }
         }
         Task::none()
