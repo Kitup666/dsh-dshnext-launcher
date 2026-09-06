@@ -20,6 +20,9 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
+/// 主窗口标题（tray/win32 按 FindWindowW 找窗口用，与 main.rs .title() 必须同源）。
+pub const WINDOW_TITLE: &str = "DshDesk — DeepSeek Harness 启动器";
+
 /// 真实绘制次数（阶段 0 的测法：自定义 widget 在 draw() 里自增，不走 Message，
 /// 否则「订阅出帧」会自己触发下一帧，测出来的空闲是假的）。
 pub static DRAWS: AtomicU64 = AtomicU64::new(0);
@@ -216,6 +219,8 @@ pub enum Message {
     CopyLogs,
 
     // 设置
+    /// 托盘事件（显示/退出）。
+    Tray(crate::tray::TrayEvent),
     /// 导出脱敏诊断文件（设置页「关于」卡）。
     ExportDiag,
     DiagExported(Result<std::path::PathBuf, String>),
@@ -223,6 +228,7 @@ pub enum Message {
     CfgPort(String),
     CfgAutoOpen(bool),
     CfgAutoStart(bool),
+    CfgTray(bool),
     CfgNodeMirror(String),
     CfgNpmRegistry(String),
     CfgCatalog(String),
@@ -323,6 +329,7 @@ impl Dshnext {
             || a.port != b.port
             || a.auto_open != b.auto_open
             || a.autostart != b.autostart
+            || a.tray != b.tray
             || a.node_mirror != b.node_mirror
             || a.npm_registry != b.npm_registry
             || a.plugin_catalog_url != b.plugin_catalog_url

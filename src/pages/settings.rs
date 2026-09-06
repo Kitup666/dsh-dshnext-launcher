@@ -160,11 +160,17 @@ fn launch_behavior<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, M
                 Message::CfgAutoStart,
                 pal
             ),
+            widgets::check(
+                "关闭窗口时驻留系统托盘",
+                app.cfg_draft.tray,
+                Message::CfgTray,
+                pal
+            ),
             // 说明文字与卡片内容列同左边缘（不缩进到复选框标签下）。早先按「对齐它
             // 解释的那个标签」缩进了 24px（方框 15 + 间距 9），量下来确实对齐了标签，
             // 但它是整张卡里唯一不在内容列上的一行——同页另两处 field 的说明都在
             // 内容列上，扫下来就这一行突出来。表单卡里共享一条左边缘比「对齐标签」重要。
-            txt("Web 界面在系统默认浏览器中打开；自启写入当前用户的 Run 键，无需管理员权限。")
+            txt("Web 界面在系统默认浏览器中打开；自启写当前用户 Run 键；托盘驻留时运行中的实例不受关窗影响。")
                 .size(FS_TINY)
                 .color(pal.text_3),
         ]

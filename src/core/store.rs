@@ -29,6 +29,8 @@ pub struct Config {
     pub theme: String,
     /// 开机自启（HKCU Run 键，用户级无需管理员）
     pub autostart: bool,
+    /// 关闭到托盘（托盘常驻模式）；关 = 关窗即退出
+    pub tray: bool,
     /// 上次关闭时的窗口几何，开窗恢复
     pub window: Option<WindowGeom>,
 }
@@ -45,6 +47,7 @@ impl Default for Config {
             auto_open: true,
             theme: "light".into(),
             autostart: false,
+            tray: false,
             window: None,
         }
     }

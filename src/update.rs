@@ -41,6 +41,10 @@ impl Dshnext {
                         move |_| Message::Goto(page),
                     ));
                 }
+                // 托盘要在主线程建（TrayIcon !Send），Opened 正是主线程 update。
+                if self.config.tray {
+                    crate::tray::ensure();
+                }
                 if self.autotest {
                     tasks.push(Task::done(Message::HoverEnter("nav.versions")));
                     tasks.push(Task::perform(
@@ -101,7 +105,7 @@ impl Dshnext {
                 self.maximized = v;
                 Task::none()
             }
-            Message::Close => self.close_window(),
+            Message::Close => self.close_or_tray(),
             Message::WindowEvent(window::Event::Opened { position, size }) => {
                 self.win_pos = position;
                 self.win_size = Some(size);
@@ -121,8 +125,8 @@ impl Dshnext {
                 Task::none()
             }
             // OS 级关闭（Alt+F4 / 任务栏）：exit_on_close_request=false，
-            // 关窗权在我们，先存几何再关。
-            Message::WindowEvent(window::Event::CloseRequested) => self.close_window(),
+            // 关窗权在我们，先存几何；开托盘则隐藏驻留。
+            Message::WindowEvent(window::Event::CloseRequested) => self.close_or_tray(),
             Message::WindowEvent(_) => Task::none(),
             Message::Resize(dir) => match self.window {
                 Some(id) => window::drag_resize(id, dir),
@@ -201,6 +205,15 @@ impl Dshnext {
                 self.cfg_draft.autostart = v;
                 Task::none()
             }
+            Message::CfgTray(v) => {
+                self.cfg_draft.tray = v;
+                Task::none()
+            }
+            Message::Tray(crate::tray::TrayEvent::Show) => {
+                crate::tray::show_window();
+                Task::none()
+            }
+            Message::Tray(crate::tray::TrayEvent::Exit) => self.close_window(),
             Message::OpenDialog(d) => {
                 self.draft = d.initial();
                 self.dialog = Some(d);
@@ -705,6 +718,11 @@ impl Dshnext {
                 let cfg = self.config.clone();
                 // 自启注册表随保存一起应用（幂等）：开关状态以注册表为准，
                 // config 只存意图。
+                if cfg.tray {
+                    crate::tray::ensure();
+                } else {
+                    crate::tray::remove();
+                }
                 Task::perform(
                     async move {
                         crate::core::store::save(&cfg)?;
@@ -876,6 +894,26 @@ impl Dshnext {
     /// 关窗：先把几何写进 config.json 再关。**必须同步写**——走 Task 的话，
     /// 进程可能在落盘前就随窗口一起退出了。
     fn close_window(&mut self) -> Task<Message> {
+        self.save_geom();
+        match self.window {
+            Some(id) => window::close(id),
+            None => iced::exit(),
+        }
+    }
+
+    /// 开托盘 = 关到托盘（dsh 实例继续跑，托盘常驻模式）；没开 = 真退出。
+    fn close_or_tray(&mut self) -> Task<Message> {
+        if self.config.tray {
+            self.save_geom();
+            crate::tray::hide_window();
+            Task::none()
+        } else {
+            self.close_window()
+        }
+    }
+
+    /// 窗口几何落盘（同步，理由见 close_window）。
+    fn save_geom(&mut self) {
         if let (Some(p), Some(s)) = (self.win_pos, self.win_size) {
             self.config.window = Some(crate::core::store::WindowGeom {
                 x: p.x,
@@ -887,10 +925,6 @@ impl Dshnext {
             if let Err(e) = crate::core::store::save(&self.config) {
                 log::warn!("保存窗口几何失败: {e}");
             }
-        }
-        match self.window {
-            Some(id) => window::close(id),
-            None => iced::exit(),
         }
     }
 
@@ -933,6 +967,9 @@ impl Dshnext {
         ];
         if self.anim.is_animating() {
             subs.push(window::frames().map(Message::Tick));
+        }
+        if self.config.tray {
+            subs.push(crate::tray::events().map(Message::Tray));
         }
         if !self.procs.is_empty() {
             subs.push(iced::time::every(Duration::from_secs(2)).map(|_| Message::PollProcs));

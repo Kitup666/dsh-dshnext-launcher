@@ -17,8 +17,10 @@ mod bridge;
 mod core;
 mod pages;
 mod theme;
+mod tray;
 mod ui;
 mod update;
+mod win32;
 
 #[cfg(test)]
 mod tests;
@@ -134,7 +136,7 @@ fn main() -> iced::Result {
         Dshnext::update,
         pages::view,
     )
-    .title("DshDesk — DeepSeek Harness 启动器")
+    .title(app::WINDOW_TITLE)
     .window(iced::window::Settings {
         // 任务栏 / Alt+Tab 的窗口图标（蓝鲸，tools/make-icon.py 生成）。
         // exe 里另嵌了同一张的多尺寸 .ico（build.rs），这里给一份运行时的。
