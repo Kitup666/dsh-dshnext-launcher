@@ -8,6 +8,7 @@ pub mod anim;
 pub mod button;
 pub mod card;
 pub mod frosted;
+pub mod glass_pipeline;
 pub mod glow_mesh;
 pub mod icon;
 pub mod modal;

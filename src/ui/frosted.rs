@@ -15,8 +15,9 @@ use iced::advanced::widget::{Operation, Tree};
 use iced::advanced::{
     image, layout, mouse, overlay, renderer, Clipboard, Layout, Shell, Widget,
 };
+use iced_renderer::fallback::Renderer as Fallback;
 use iced::widget::container;
-use iced::{Color, Element, Length, Padding, Point, Rectangle, Size, Vector};
+use iced::{Background, Border, Color, Element, Gradient, Length, Padding, Point, Rectangle, Size, Vector};
 
 // ── 滚动对齐 ─────────────────────────────────────────────────────────────
 // 卡片的 bounds.pos 是「滚动内容空间」坐标：scrollable 用
@@ -53,6 +54,33 @@ pub struct Frosted<'a, Message> {
 }
 
 impl<'a, Message> Frosted<'a, Message> {
+    /// 内容画在最上层：with_layer 开新层，层序号更大、稳定后画
+    /// （AGENTS.md 坑 23 的结论），按钮/输入框/文字都不吃颗粒。
+    fn draw_content(
+        &self,
+        tree: &Tree,
+        renderer: &mut iced::Renderer,
+        theme: &iced::Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        clipped: Rectangle,
+    ) {
+        let bounds = layout.bounds();
+        let child = layout.children().next().unwrap();
+        renderer.with_layer(bounds, |renderer| {
+            self.content.as_widget().draw(
+                tree,
+                renderer,
+                theme,
+                style,
+                child,
+                cursor,
+                &clipped,
+            );
+        });
+    }
+
     pub fn new(
         content: impl Into<Element<'a, Message>>,
         style: container::Style,
@@ -114,6 +142,45 @@ where
         let Some(clipped) = bounds.intersection(viewport) else {
             return;
         };
+
+        // 暗色 + wgpu 后端：卡面/光球/颗粒/描边/圆角全部收进玻璃 shader
+        // （glass_pipeline），基层只留阴影。场是解析求值的，卡片矩形由
+        // iced 层变换（滚动/reveal）自动带到位，不需要本文件里的
+        // viewport 反推。tiny-skia 与亮色主题走下面旧路径。
+        if self.backdrop.is_some() {
+            if let Fallback::Primary(r) = renderer {
+                // 只有阴影的 quad：background 置 None、描边归零（描边由
+                // shader 画，quad 的边会被不透明卡面盖住）
+                let shadow_style = container::Style {
+                    text_color: self.style.text_color,
+                    background: None,
+                    border: Border {
+                        color: self.style.border.color,
+                        width: 0.0,
+                        radius: self.style.border.radius,
+                    },
+                    shadow: self.style.shadow,
+                    snap: self.style.snap,
+                };
+                iced::widget::container::draw_background(r, &shadow_style, bounds);
+
+                r.with_layer(bounds, |r| {
+                    use iced_wgpu::primitive::Renderer as _;
+                    if let Some(glass) = extract_glass(&self.style, self.grain) {
+                        r.draw_primitive(
+                            bounds,
+                            crate::ui::glass_pipeline::GlassQuad::card(
+                                glass,
+                                self.backdrop.unwrap(),
+                            ),
+                        );
+                    }
+                });
+
+                self.draw_content(tree, renderer, theme, style, layout, cursor, clipped);
+                return;
+            }
+        }
 
         // 1. 不透明底 + 描边 + 阴影。磨砂的「透」不靠真半透明（底下没东西
         //    可透，只有噪声感），靠第 2 步把背景光球柔化后画进卡内——
@@ -187,18 +254,7 @@ where
 
         // 3. 内容在最上层：with_layer 开新层，层序号更大、稳定后画
         //    （AGENTS.md 坑 23 的结论），按钮/输入框/文字都不吃颗粒。
-        let child = layout.children().next().unwrap();
-        renderer.with_layer(bounds, |renderer| {
-            self.content.as_widget().draw(
-                tree,
-                renderer,
-                theme,
-                style,
-                child,
-                cursor,
-                &clipped,
-            );
-        });
+        self.draw_content(tree, renderer, theme, style, layout, cursor, clipped);
     }
 
     // 无状态透传（与 iced container 同款）：tree 本身就是 content 的树，
@@ -294,4 +350,28 @@ where
     fn from(frosted: Frosted<'a, Message>) -> Self {
         Element::new(frosted)
     }
+}
+
+/// 从容器样式的线性渐变提取玻璃 shader 的面层数据。没有渐变背景
+/// （不该发生）时返回 None，调用方退回旧路径。
+fn extract_glass(
+    style: &container::Style,
+    grain: f32,
+) -> Option<crate::ui::glass_pipeline::CardGlass> {
+    let Background::Gradient(Gradient::Linear(l)) = style.background.as_ref()? else {
+        return None;
+    };
+    let sheen = l.stops[0]?.color;
+    let base_stop = l.stops[1]?.color;
+    Some(crate::ui::glass_pipeline::CardGlass {
+        sheen,
+        base: base_stop,
+        stop: l.stops[1]?.offset,
+        angle: l.angle,
+        border: style.border.color,
+        border_width: style.border.width,
+        radius: style.border.radius.top_left,
+        grain_opacity: grain,
+        grain_tile: GRAIN_TILE,
+    })
 }

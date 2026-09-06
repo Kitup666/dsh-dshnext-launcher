@@ -193,24 +193,16 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 }
 
 /// 环境光：**左上、右下两个径向球圆光晕**（真圆，不是线性拼的楔形）。
-/// iced 0.14 没有径向渐变（gradient.rs 标 TBD），这里走 `ui::glow_mesh`
-/// 的 Mesh::Solid 扇形顶点（公开 API）。中间大面积留干净。
+/// wgpu 后端走玻璃 shader 的背景模式——与卡片**同一份** fragment 求值，
+/// 背景与卡内在构造上就是同一片场；tiny-skia 回退 `ui::glow_mesh` 的
+/// Mesh::Solid 扇形顶点（公开 API）。中间大面积留干净。
 ///
 /// **背景已冻结**（2026-09-06 用户定）：慢漂移跑了半天谁也没看出来在动，
 /// 白付 15fps 常驻出帧的代价——「空闲零出帧」纪律恢复。光球参数由
 /// `glow_mesh::ambient_specs` 统一供给（Frosted 的伪造 backdrop 共用同一
 /// 份，卡内颜色随位置对应窗外背景，磨砂的「透」才成立）。
 fn ambient(pal: &'static Palette) -> Element<'static, Message> {
-    glow_mesh::glow_layer(
-        glow_mesh::ambient_specs(pal)
-            .into_iter()
-            .map(|(center, radius, color)| glow_mesh::GlowSpec {
-                center,
-                radius,
-                color,
-            })
-            .collect(),
-    )
+    crate::ui::glass_pipeline::background_field(glow_mesh::ambient_specs(pal))
 }
 
 fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {

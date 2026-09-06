@@ -26,6 +26,9 @@ pub struct GlowSpec {
 }
 
 /// 全窗画布上画径向光晕。透明、不吃任何事件、布局上只想占 Fill。
+/// 现役路径是 glass_pipeline::background_field（wgpu shader，Secondary
+/// 分支同样落到 build_orb）；本函数保留给纯 mesh 演示/对照用。
+#[allow(dead_code)]
 pub fn glow_layer<Message: 'static>(specs: Vec<GlowSpec>) -> Element<'static, Message> {
     Glow { specs }.into()
 }

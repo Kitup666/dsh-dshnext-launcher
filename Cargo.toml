@@ -22,6 +22,11 @@ iced = { version = "0.14", default-features = false, features = [
 png = "0.17"
 env_logger = "0.11"
 log = "0.4"
+# 玻璃 shader 管线（src/ui/glass_pipeline.rs）：iced 官方自定义 primitive 通路，
+# 版本必须与 iced 内部一致（0.14 互相锁死）。wgpu 本体走 iced::wgpu 再导出。
+iced_wgpu = "0.14"
+iced_renderer = "0.14"
+bytemuck = { version = "1.0", features = ["derive"] }
 
 # ---- 后端（src/core/，版本与上一代 docs/Cargo.toml.tauri-reference 对齐）----
 serde = { version = "1", features = ["derive"] }

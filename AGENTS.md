@@ -88,6 +88,9 @@
 25. **要在动画中途截图，光靠 `--shot --after` 不行**——落定态永远是它截到的样子。加了 `--switch-to <页> --switch-at <毫秒>`：开窗后定时切页，`--after` 与它的差就是快门落在过渡的第几毫秒。
 26. **`AnimState::animate_to` 起不了「重播」。** 它从当前值出发，而上一次入场落定后当前值已等于目标值，再调等于什么都不动。切页入场要用 `restart(key, from, to, dur, now)` 强制从头跑。补间方向刻意写成 **1 = 刚切、0 = 落定**：`value()` 对无记录的 key 返回 0.0，正好是落定态，冷启动和 `--page` 出图都不必预置初值。
 27. **`image::Handle::from_bytes` 的 id 是 `Id::unique()`，在 `view()` 里现造 = 每次都是「新图」**，缓存穿透 → 悬停任何按钮触发 view 重建时头像闪烁。内嵌位图要用 `OnceLock` 把 Handle 存成全局单例（`brand_handle()`）。SVG 的 `from_memory` 没这个问题——它的 id 按内容 hash（`iced_core/src/svg.rs`），`&'static [u8]` 天然稳定，所以界面图标可以直接现造。
+28. **自定义 wgpu 管线走 iced_wgpu 0.14 官方 primitive 通路**（`primitive::{Primitive, Pipeline}` + `Renderer::draw_primitive`，`draw()` 返回 true 可直接画进 iced 的大 pass；见 `src/ui/glass_pipeline.rs`）。三个保命点：同层 flush 顺序固定 **quads→triangles→primitives→images→text**（layer.rs `start()/end()`），primitive 永远在同层 quad/mesh 之后、image/text 之前；`prepare` 拿到的 bounds **已带上层变换**（滚动 with_translation、reveal 位移），卡片矩形不用自己做平移数学；`Pipeline::trim()` 每帧末调用，帧内槽位计数靠它复位。
+29. **dst-read 混合（真 backdrop-filter / 逐像素混合模式）在 wgpu 27 下不可达**：primitive 的 `render()` 回调只给 `TextureView`，拿不到 `Texture` 句柄做 `copy_texture_to_texture`，wgpu 也没有 framebuffer fetch。已知底图时用**解析求值**替代读画布（glass.wgsl 在 fragment 里重算光球场——数学上还更准）。
+30. **双后端编译时 `iced::Renderer` 是 fallback 枚举**（`Primary`=wgpu、`Secondary`=tiny-skia，变体公开可 match），后端专属 widget 按变体分路（`frosted.rs`/`glass_pipeline.rs` 的背景 widget）。`iced::renderer` 模块是私有的，枚举要从 `iced_renderer` crate 引；wgpu 本体用 `iced::wgpu` 再导出（版本与 iced 锁死，**别单独加 wgpu 依赖**，否则 trait 签名对不上）。
 
 ## 后端复用（core/，抄自第一代）
 

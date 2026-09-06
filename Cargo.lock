@@ -772,11 +772,14 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 name = "dshnext"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "dirs",
  "env_logger",
  "futures-util",
  "iced",
+ "iced_renderer",
  "iced_test",
+ "iced_wgpu",
  "log",
  "open",
  "png 0.17.16",
