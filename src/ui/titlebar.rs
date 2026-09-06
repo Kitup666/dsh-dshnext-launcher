@@ -14,12 +14,13 @@ use crate::ui::txt_bold;
 use iced::widget::{Row, container, mouse_area, row, space};
 use iced::window::Direction;
 use iced::{Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme};
-/// 顶栏高度（逻辑像素）。品牌块作为**侧边栏头部单元**住在左段（宽 = 侧边栏
-/// 232），右段是内容区上方的拖动条 + 窗口按钮——两段同高构成一行。64 给
-/// 头部单元一个从容的呼吸档（logo 34 + 双行文字居中），也与用户示意稿的
-/// 蓝框（~232×69）同感。
-pub const TITLEBAR_H: f32 = 64.0;
-/// 侧边栏宽度——头部单元与它对齐（pages/mod.rs 的 sidebar 同款值）。
+/// 窗口条高度（逻辑像素）。**只**承担拖动 + 窗口按钮，横跨主区上方——
+/// 40 的细条（用户反馈：64 太宽，是被品牌块撑高的）。品牌块是侧边栏
+/// 自己的独立栏位（BRAND_H），高度与此互不牵连。
+pub const TITLEBAR_H: f32 = 40.0;
+/// 品牌头部单元高度：贴窗口左上角、宽 = 侧边栏，独立于窗口条。
+pub const BRAND_H: f32 = 64.0;
+/// 侧边栏宽度——品牌头部单元与它对齐（pages/mod.rs 的 sidebar 同款值）。
 pub const SIDEBAR_W: f32 = 232.0;
 /// 边缘缩放热区宽度。6px 是 Windows 原生无边框应用的常用值：够点中，又不至于误触。
 const GRIP: f32 = 6.0;
@@ -32,12 +33,28 @@ pub struct Actions<Message> {
     pub close: Message,
 }
 
-/// 顶栏：**左段**是品牌头部单元（宽 = 侧边栏，随拖动区），**右段**是内容区
-/// 上方的拖动条 + 三个窗口按钮。两段同高同排，视觉上是一条顶带；分隔线
-/// 从顶带下方才开始（侧边栏与内容区之间）。
+/// 品牌头部单元：**侧边栏的独立栏位**，贴窗口左上角、宽 = 侧边栏、
+/// 高 = BRAND_H（不受窗口条高度牵连）。内容左对齐（与侧边栏 14px 内距
+/// 同款），整块是拖动热区（非交互元素，按下即拖窗，资源管理器惯例）。
+pub fn brand_cell<'a, Message: Clone + 'a>(
+    brand: Element<'a, Message>,
+    drag: Message,
+) -> Element<'a, Message> {
+    mouse_area(
+        container(brand)
+            .width(Length::Fixed(SIDEBAR_W))
+            .height(Length::Fixed(BRAND_H))
+            .padding(Padding::from(0.0).left(14.0))
+            .align_y(Alignment::Center),
+    )
+    .on_press(drag)
+    .into()
+}
+
+/// 窗口条：主区上方的细拖动条 + 三个窗口按钮。宽度随主区（它住在主区
+/// 列里，侧边栏不在其间）。
 pub fn titlebar<'a, Message: Clone + 'a>(
     pal: &'static Palette,
-    brand: Element<'a, Message>,
     anim: &AnimState,
     actions: Actions<Message>,
     maximized: bool,
@@ -51,18 +68,7 @@ pub fn titlebar<'a, Message: Clone + 'a>(
         close,
     } = actions;
 
-    // 品牌头部单元：宽 = 侧边栏，内容左对齐（与侧边栏 14px 内距同款），
-    // 整块是拖动热区（非交互元素，按下即拖窗，资源管理器惯例）。
-    let brand_cell = mouse_area(
-        container(brand)
-            .width(Length::Fixed(SIDEBAR_W))
-            .height(TITLEBAR_H)
-            .padding(Padding::from(0.0).left(14.0))
-            .align_y(Alignment::Center),
-    )
-    .on_press(drag.clone());
-
-    // 可拖动区：头部单元右侧整条空白都能抓。
+    // 可拖动区：整条空白都能抓。
     let grab = mouse_area(
         container(space::Space::new())
             .height(Fill)
@@ -87,9 +93,9 @@ pub fn titlebar<'a, Message: Clone + 'a>(
     .spacing(2)
     .align_y(Alignment::Center);
 
-    container(row![brand_cell, grab, buttons].align_y(Alignment::Center))
+    container(row![grab, buttons].align_y(Alignment::Center))
         .width(Fill)
-        .height(TITLEBAR_H)
+        .height(Length::Fixed(TITLEBAR_H))
         .padding(Padding::from(0.0).right(6.0))
         .style(move |_theme: &Theme| container::Style {
             text_color: Some(pal.text_2),

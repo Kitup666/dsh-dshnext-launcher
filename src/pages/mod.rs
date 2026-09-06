@@ -122,9 +122,9 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             .style(widgets::slim_scroll_style(pal))
             .width(Fill)
             .height(Fill),
-            // 顶帏窄于顶 padding：稍滚一点标题不该整个被吃掉，24px 只柔化
+            // 顶帏窄于顶 padding：稍滚一点标题不该整个被吃掉，14px 只柔化
             // 贴边瞬间；底帏对齐底 padding 44。
-            fade_veil(pal, 24.0, true),
+            fade_veil(pal, 14.0, true),
             fade_veil(pal, 44.0, false),
         ]
         .width(Fill)
@@ -142,24 +142,30 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         anim::PAGE_SHIFT,
     );
 
-    let inner = column![
-        titlebar::titlebar(
-            pal,
-            brand(pal),
-            &app.anim,
-            titlebar::Actions {
-                drag: Message::DragWindow,
-                minimize: Message::Minimize,
-                toggle_maximize: Message::ToggleMaximize,
-                close: Message::Close,
-            },
-            app.maximized,
-            Message::HoverEnter,
-            Message::HoverExit,
-        ),
-        row![sidebar(app, pal), side_divider(pal), main_area]
-            .width(Fill)
-            .height(Fill),
+    // 布局：侧边栏（含**独立的品牌头部单元**）｜分隔线｜主区列（细窗口条 +
+    // 页面）。窗口条只管拖动+窗口按钮，横跨主区上方；品牌块是侧边栏自己
+    // 的栏位，高度独立——细条不再被品牌撑高（2026-09-06 用户反馈）。
+    let inner = row![
+        sidebar(app, pal),
+        side_divider(pal),
+        column![
+            titlebar::titlebar(
+                pal,
+                &app.anim,
+                titlebar::Actions {
+                    drag: Message::DragWindow,
+                    minimize: Message::Minimize,
+                    toggle_maximize: Message::ToggleMaximize,
+                    close: Message::Close,
+                },
+                app.maximized,
+                Message::HoverEnter,
+                Message::HoverExit,
+            ),
+            main_area,
+        ]
+        .width(Fill)
+        .height(Fill),
     ]
     .width(Fill)
     .height(Fill);
@@ -222,7 +228,8 @@ fn ambient(pal: &'static Palette) -> Element<'static, Message> {
 }
 
 /// 品牌块（logo + 名称 + 副标题）：**侧边栏头部单元**，宽 = 侧边栏、贴窗口
-/// 左上角，高度 = TITLEBAR_H（2026-09-06 用户示意稿定）。logo 是与 exe 图标
+/// 左上角，高度 = BRAND_H（独立栏位，2026-09-06 用户定：不与窗口条同高）。
+/// logo 是与 exe 图标
 /// 同源的插画，圆角烘在 PNG 的 alpha 里（image widget 本身不支持圆角），角上
 /// 透出的是环境光渐变，不是黑块。Handle 必须全局单例：image::Handle::
 /// from_bytes 的 id 是 Id::unique()，在 view() 里现造会每次都变成「新图」，
@@ -281,9 +288,11 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     ]
     .spacing(6);
 
-    // DrawTicker 放侧边栏（常驻可见）。放 scrollable 里会被视口剔除，永远不 draw
-    // ——阶段 0 那条 intersects(viewport) 剔除逻辑的活教材。
-    container(
+    // 品牌头部单元在最顶（贴窗口左上角，独立高度，自带拖动热区），
+    // 导航和状态脚注在下面的常规容器里。DrawTicker 放侧边栏（常驻可见），
+    // 放 scrollable 里会被视口剔除永远不 draw——阶段 0 那条 intersects
+    // (viewport) 剔除逻辑的活教材。
+    let body = container(
         column![
             nav,
             space::vertical(),
@@ -302,7 +311,14 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
         border: Border::default(),
         shadow: Shadow::default(),
         snap: true,
-    })
+    });
+
+    column![
+        titlebar::brand_cell(brand(pal), Message::DragWindow),
+        body,
+    ]
+    .width(Length::Fixed(232.0))
+    .height(Fill)
     .into()
 }
 
