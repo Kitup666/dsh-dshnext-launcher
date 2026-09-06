@@ -14,7 +14,6 @@ use crate::ui::txt_bold;
 use iced::widget::{Row, container, mouse_area, row, space};
 use iced::window::Direction;
 use iced::{Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme};
-
 /// 标题栏高度（逻辑像素）。比系统的 32px 高一点，给拖动留足热区。
 pub const TITLEBAR_H: f32 = 38.0;
 /// 边缘缩放热区宽度。6px 是 Windows 原生无边框应用的常用值：够点中，又不至于误触。
@@ -28,10 +27,12 @@ pub struct Actions<Message> {
     pub close: Message,
 }
 
-/// 自绘标题栏：左侧整条空白可拖动（不画标题文字——侧边栏品牌区已经说过一次，
-/// 标题栏再说是重复；用户反馈「左上角太丑」后删除），右侧三个窗口按钮。
+/// 自绘标题栏：**通栏**（横跨整个窗口宽度，含侧边栏上方）。左侧是品牌块
+/// （logo + 名称，随标题栏可拖动），中间整条空白可拖动（不画标题文字——
+/// 品牌区已经说过一次，标题栏再说是重复），右侧三个窗口按钮。
 pub fn titlebar<'a, Message: Clone + 'a>(
     pal: &'static Palette,
+    brand: Element<'a, Message>,
     anim: &AnimState,
     actions: Actions<Message>,
     maximized: bool,
@@ -45,7 +46,15 @@ pub fn titlebar<'a, Message: Clone + 'a>(
         close,
     } = actions;
 
-    // 可拖动区：标题栏左半整条空白都能抓。
+    // 品牌块也在拖动热区里（非交互元素，按下即拖窗，资源管理器惯例）。
+    let brand_grab = mouse_area(
+        container(brand)
+            .height(Fill)
+            .padding(Padding::from(0.0).left(14.0)),
+    )
+    .on_press(drag.clone());
+
+    // 可拖动区：品牌右侧整条空白都能抓。
     let grab = mouse_area(
         container(space::Space::new())
             .height(Fill)
@@ -70,7 +79,7 @@ pub fn titlebar<'a, Message: Clone + 'a>(
     .spacing(2)
     .align_y(Alignment::Center);
 
-    container(row![grab, buttons].align_y(Alignment::Center))
+    container(row![brand_grab, grab, buttons].align_y(Alignment::Center))
         .width(Fill)
         .height(TITLEBAR_H)
         .padding(Padding::from(0.0).right(6.0))

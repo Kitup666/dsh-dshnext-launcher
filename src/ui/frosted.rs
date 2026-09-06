@@ -29,8 +29,9 @@ use iced::{Background, Border, Color, Element, Gradient, Length, Padding, Point,
 // 切页、滚动钳制、改布局都天然自洽，不会出现全局状态与 widget 状态脱节。
 //
 // 主滚动区的窗口原点（逻辑 px）：侧边栏 232 + 1px 分隔线，标题栏 TITLEBAR_H。
-// 与 pages/mod.rs 的布局联动——改那边的布局要同步改这里。
-const MAIN_ORIGIN: (f32, f32) = (233.0, 38.0);
+// 标题栏是**通栏**（横跨整窗、品牌块在其左端），侧边栏和内容区都在它下面。
+// 高度引用 titlebar::TITLEBAR_H 常量，不再双处硬编码。
+const MAIN_ORIGIN: (f32, f32) = (233.0, crate::ui::titlebar::TITLEBAR_H);
 
 // 颗粒场：GRAIN_ROWS×GRAIN_COLS 张瓦片铺窗口逻辑坐标，瓦片 1:1 贴逻辑像素。
 // 2048×1376 覆盖本机最大窗口（2560×1600 物理 @125% = 2048×1280 逻辑）。

@@ -130,6 +130,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let inner = column![
         titlebar::titlebar(
             pal,
+            brand(pal),
             &app.anim,
             titlebar::Actions {
                 drag: Message::DragWindow,
@@ -205,24 +206,28 @@ fn ambient(pal: &'static Palette) -> Element<'static, Message> {
     crate::ui::glass_pipeline::background_field(glow_mesh::ambient_specs(pal))
 }
 
-fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
-    let brand = row![
-        // 品牌头像：与 exe 图标同源的插画。圆角烘在 PNG 的 alpha 里（image
-        // widget 本身不支持圆角），角上透出的是环境光渐变，不是黑块。
-        // Handle 必须全局单例：image::Handle::from_bytes 的 id 是 Id::unique()，
-        // 在 view() 里现造会每次都变成「新图」，缓存穿透导致悬停时闪烁
-        // （svg 的 from_memory 按内容 hash 没这个问题，见 AGENTS.md 坑 27）。
+/// 品牌块（logo + 名称 + 副标题）：住在**通栏标题栏左端**（2026-09-06 用户定，
+/// 架构 = 通栏标题栏 / 侧边栏 / 内容区三段）。logo 是与 exe 图标同源的插画，
+/// 圆角烘在 PNG 的 alpha 里（image widget 本身不支持圆角），角上透出的是
+/// 环境光渐变，不是黑块。Handle 必须全局单例：image::Handle::from_bytes 的
+/// id 是 Id::unique()，在 view() 里现造会每次都变成「新图」，缓存穿透导致
+/// 悬停时闪烁（svg 的 from_memory 按内容 hash 没这个问题，见 AGENTS.md 坑 27）。
+fn brand<'a>(pal: &'static Palette) -> Element<'a, Message> {
+    row![
         iced::widget::image::Image::new(brand_handle())
-            .width(Length::Fixed(34.0))
-            .height(Length::Fixed(34.0)),
+            .width(Length::Fixed(26.0))
+            .height(Length::Fixed(26.0)),
         column![
             txt_bold("DshDesk").size(FS_TITLE).color(pal.text),
             txt("DeepSeek Harness 启动器").size(FS_MICRO).color(pal.text_3),
         ],
     ]
-    .spacing(11)
-    .align_y(Alignment::Center);
+    .spacing(9)
+    .align_y(Alignment::Center)
+    .into()
+}
 
+fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
     let mut nav = Column::new().spacing(2);
     for p in Page::ALL {
         nav = nav.push(nav_item(app, p, pal));
@@ -264,8 +269,6 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     // ——阶段 0 那条 intersects(viewport) 剔除逻辑的活教材。
     container(
         column![
-            brand,
-            space::vertical().height(24.0),
             nav,
             space::vertical(),
             foot,
@@ -275,7 +278,7 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     )
     .width(Length::Fixed(232.0))
     .height(Fill)
-    .padding(Padding::from(14).top(22).bottom(16))
+    .padding(Padding::from(14).top(10).bottom(16))
     .style(move |_theme: &Theme| container::Style {
         text_color: Some(pal.text),
         // 透明：环境光在下层铺满整窗，这里填色会切出一道硬边。
