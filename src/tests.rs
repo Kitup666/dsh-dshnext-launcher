@@ -291,6 +291,17 @@ fn show_key_toggles_label() {
 // ---------------------------------------------------------------- 首页启动/停止
 
 #[test]
+fn selfupdate_version_compare() {
+    let n = crate::core::selfupdate::newer;
+    assert!(n("0.2.0", "0.1.9"));
+    assert!(n("v1.0", "0.9.9"));
+    assert!(n("0.1.0.1", "0.1.0"), "段数不齐补零比");
+    assert!(!n("0.1.0", "0.1.0"));
+    assert!(!n("0.1.0", "0.1.1"));
+    assert!(!n("0.1", "0.1.0"), "补零后相等不算新");
+}
+
+#[test]
 fn diag_export_redacts_api_key() {
     let mut cfg = crate::core::store::Config::default();
     cfg.api_key = "sk-very-secret-1234567890abcdef".into();

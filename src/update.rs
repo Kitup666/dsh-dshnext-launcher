@@ -209,6 +209,71 @@ impl Dshnext {
                 self.cfg_draft.tray = v;
                 Task::none()
             }
+            Message::CfgUpdateUrl(v) => {
+                self.cfg_draft.update_url = v;
+                Task::none()
+            }
+            Message::CheckUpdate => {
+                let url = self.config.update_url.clone();
+                Task::perform(crate::core::selfupdate::latest(url), Message::UpdateChecked)
+            }
+            Message::UpdateChecked(result) => match result {
+                Ok(info) => {
+                    if crate::core::selfupdate::newer(&info.version, env!("CARGO_PKG_VERSION")) {
+                        self.busy = Some(format!("正在下载更新 v{}…", info.version));
+                        Task::perform(
+                            async move {
+                                let tmp =
+                                    crate::core::store::data_dir().join("update/dshnext.exe.new");
+                                crate::core::selfupdate::download_to(&info.exe_url, &tmp).await?;
+                                let expected = if let Some(u) = &info.sha256 {
+                                    Some(crate::core::selfupdate::download_string(u).await?)
+                                } else {
+                                    None
+                                };
+                                let path = tmp.clone();
+                                tokio::task::spawn_blocking(move || {
+                                    crate::core::selfupdate::verify_hash(&path, expected.as_deref())
+                                })
+                                .await
+                                .map_err(|e| e.to_string())??;
+                                Ok((info.version, tmp))
+                            },
+                            Message::UpdateReady,
+                        )
+                    } else {
+                        self.notify(
+                            ToastKind::Ok,
+                            format!("已是最新版本 v{}", env!("CARGO_PKG_VERSION")),
+                        );
+                        Task::none()
+                    }
+                }
+                Err(e) => {
+                    self.notify(ToastKind::Err, format!("检查更新失败：{e}"));
+                    Task::none()
+                }
+            },
+            Message::UpdateReady(result) => {
+                self.busy = None;
+                match result {
+                    Ok((version, path)) => {
+                        // 换身是本地文件操作，同步做掉（快），成败都明确告知。
+                        match crate::core::selfupdate::apply_swap(&path) {
+                            Ok(()) => self.notify(
+                                ToastKind::Ok,
+                                format!("已更新到 v{version}，重启启动器后生效"),
+                            ),
+                            Err(e) => self.notify(ToastKind::Err, format!("更新落位失败：{e}")),
+                        }
+                        Task::none()
+                    }
+                    Err(e) => {
+                        self.notify(ToastKind::Err, format!("更新失败：{e}"));
+                        Task::none()
+                    }
+                }
+            }
             Message::Tray(crate::tray::TrayEvent::Show) => {
                 crate::tray::show_window();
                 Task::none()

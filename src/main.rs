@@ -98,6 +98,8 @@ fn main() -> iced::Result {
     // core 事件通道：发送端进全局供后端用，接收端等 subscription 取走。
     // 必须在 application 之前——view 第一次跑就可能要 sink()。
     bridge::init();
+    // 清掉上次自更新换身留下的 exe.old（此刻运行中的已经是新 exe）。
+    crate::core::selfupdate::cleanup_old();
 
     // --page：直接开在某一页，出图验收时省得点。
     let start_page = match opt("--page").as_deref() {

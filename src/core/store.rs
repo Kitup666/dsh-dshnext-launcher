@@ -31,6 +31,8 @@ pub struct Config {
     pub autostart: bool,
     /// 关闭到托盘（托盘常驻模式）；关 = 关窗即退出
     pub tray: bool,
+    /// 启动器更新源（GitHub Releases API 地址），空 = 不检查更新
+    pub update_url: String,
     /// 上次关闭时的窗口几何，开窗恢复
     pub window: Option<WindowGeom>,
 }
@@ -48,6 +50,7 @@ impl Default for Config {
             theme: "light".into(),
             autostart: false,
             tray: false,
+            update_url: String::new(),
             window: None,
         }
     }

@@ -221,6 +221,10 @@ pub enum Message {
     // 设置
     /// 托盘事件（显示/退出）。
     Tray(crate::tray::TrayEvent),
+    /// 自更新：检查 → 下载校验 → 换身。
+    CheckUpdate,
+    UpdateChecked(Result<crate::core::selfupdate::UpdateInfo, String>),
+    UpdateReady(Result<(String, std::path::PathBuf), String>),
     /// 导出脱敏诊断文件（设置页「关于」卡）。
     ExportDiag,
     DiagExported(Result<std::path::PathBuf, String>),
@@ -229,6 +233,7 @@ pub enum Message {
     CfgAutoOpen(bool),
     CfgAutoStart(bool),
     CfgTray(bool),
+    CfgUpdateUrl(String),
     CfgNodeMirror(String),
     CfgNpmRegistry(String),
     CfgCatalog(String),
@@ -330,6 +335,7 @@ impl Dshnext {
             || a.auto_open != b.auto_open
             || a.autostart != b.autostart
             || a.tray != b.tray
+            || a.update_url != b.update_url
             || a.node_mirror != b.node_mirror
             || a.npm_registry != b.npm_registry
             || a.plugin_catalog_url != b.plugin_catalog_url

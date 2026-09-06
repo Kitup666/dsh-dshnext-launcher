@@ -19,4 +19,5 @@ pub mod platform;
 pub mod plugins;
 pub mod procman;
 pub mod profiles;
+pub mod selfupdate;
 pub mod store;

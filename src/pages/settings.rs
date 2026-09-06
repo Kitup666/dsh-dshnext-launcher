@@ -250,6 +250,21 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
             ),
             space::vertical().height(6.0),
             widgets::field(
+                "启动器更新源（GitHub Releases API）",
+                iced::widget::container(widgets::input(
+                    "留空则不检查启动器更新",
+                    &app.cfg_draft.update_url,
+                    Message::CfgUpdateUrl,
+                    true,
+                    pal
+                ))
+                .width(Length::Fixed(420.0))
+                .into(),
+                Some("发布 Release 时附上 dshnext.exe（可选 dshnext.exe.sha256），这里填 …/releases/latest 地址。"),
+                pal
+            ),
+            space::vertical().height(6.0),
+            widgets::field(
                 "插件商店目录（catalog.json）",
                 iced::widget::container(widgets::input(
                     "留空则只用 npm 上的 dsh-plugin 关键词作为来源",
@@ -302,6 +317,18 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
                         Some(Message::HoverEnter("ab.diag")),
                         Some(Message::HoverExit("ab.diag")),
                     ),
+                    // 没配更新源就不给检查入口（点了一定失败，徒增困惑）。
+                    (!app.config.update_url.is_empty()).then(|| {
+                        button::btn(
+                            Spec::new("ab.update", "检查更新", Variant::Secondary)
+                                .size(BtnSize::Small),
+                            pal,
+                            &app.anim,
+                            Some(Message::CheckUpdate),
+                            Some(Message::HoverEnter("ab.update")),
+                            Some(Message::HoverExit("ab.update")),
+                        )
+                    }),
                 ]
                 .spacing(10),
             )
