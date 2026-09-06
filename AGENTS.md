@@ -24,10 +24,12 @@
 - `phase0/tools/NotoSansSC-var.ttf`（17 MB 变体源字体）**在磁盘上但不入库**，别重新下载；下载地址在 `build_fonts.py` 头注释里
 
 **改代码前先 `taskkill //F //IM dshnext.exe`**，否则 `cargo build` 报 `拒绝访问 (os error 5)`——Windows 不让覆盖正在运行的 exe。
+**实测前必须 `cargo build --release`**——`cargo test` 不更新 `target/release/dshnext.exe`。一天内两次拿旧 exe 跑 e2e/自愈测试得出错误结论（「StartProbed 没出现」「自动重启不生效」，其实都生效了）。
+**Git Bash 里别写 `>nul`**——那是 cmd 的设备名，bash 会创建真实文件 `nul`，`git add -A` 直接撞死（`unable to index file 'nul'`）。重定向到黑洞用 `>/dev/null`。
 
 ## PowerShell 脚本
 
-1. **`.ps1` 必须是纯 ASCII，或者加 UTF-8 BOM**（`node tools/add-bom.cjs <file>`）。Windows PowerShell 没 BOM 时按 ANSI 读，中文字面量变成 `鎺у埗鍙?`，所有按中文名匹配的逻辑静默失败。第一代 e2e 因此挂了 8 个断言。
+1. **`.ps1` 必须是纯 ASCII，或者加 UTF-8 BOM**（`node tools/add-bom.cjs <file>`）。Windows PowerShell 没 BOM 时按 ANSI 读，中文字面量变成 `鎺у埗鍙?`，所有按中文名匹配的逻辑静默失败。第一代 e2e 因此挂了 8 个断言。**`.bat` 同理且没有 BOM 出路**——cmd 按 ACP 读，UTF-8 中文注释变乱码后把行解析搅碎（实测 cmd 拿 `'see'`/`'iles'` 这种碎片当命令执行），dev.bat 里只能写 ASCII 注释。
 2. **`Add-Type` 里用 `System.Drawing` 要显式 `-ReferencedAssemblies System.Drawing`**（不是 `System.Drawing.Common`），否则内联类编译失败、类型根本不存在，报错是莫名的 `TypeNotFound`。
 3. `GetCurrentThreadId` 在 **kernel32**，不在 user32。P/Invoke 声明错了会运行时才崩。
 4. `SendKeys` **表达不了 Ctrl+Space**（`"^{ }"` 报「关键字无效」）。切输入法用 `PostMessage(WM_INPUTLANGCHANGEREQUEST)`。
@@ -90,6 +92,9 @@
 25. **要在动画中途截图，光靠 `--shot --after` 不行**——落定态永远是它截到的样子。加了 `--switch-to <页> --switch-at <毫秒>`：开窗后定时切页，`--after` 与它的差就是快门落在过渡的第几毫秒。
 26. **`AnimState::animate_to` 起不了「重播」。** 它从当前值出发，而上一次入场落定后当前值已等于目标值，再调等于什么都不动。切页入场要用 `restart(key, from, to, dur, now)` 强制从头跑。补间方向刻意写成 **1 = 刚切、0 = 落定**：`value()` 对无记录的 key 返回 0.0，正好是落定态，冷启动和 `--page` 出图都不必预置初值。
 27. **`image::Handle::from_bytes` 的 id 是 `Id::unique()`，在 `view()` 里现造 = 每次都是「新图」**，缓存穿透 → 悬停任何按钮触发 view 重建时头像闪烁。内嵌位图要用 `OnceLock` 把 Handle 存成全局单例（`brand_handle()`）。SVG 的 `from_memory` 没这个问题——它的 id 按内容 hash（`iced_core/src/svg.rs`），`&'static [u8]` 天然稳定，所以界面图标可以直接现造。
+28. **iced 0.14 没有 `window::hide/show`**（runtime 全文只有 minimize）——「关闭到托盘」只能自己 `ShowWindow`，hwnd 按标题 `FindWindowW`（src/win32.rs）。标题是找窗的钥匙：`.title()` 与找窗必须同源（`app::WINDOW_TITLE` 常量）。
+29. **`tray-icon` 的 `TrayIcon` 不是 Send**（内部 `Rc<RefCell>`）——托盘对象放 `thread_local`，只在主线程 update 里创建/移除；事件走 crate 全局 channel（订阅流跑在 executor worker 线程，只能轮询 channel，别碰托盘对象）。Windows 上托盘的消息窗口依赖创建线程的消息泵——winit 主线程满足。
+30. **`Task::perform` 的 future 借不了局部变量**（`latest(&url)` 报 E0597）——API 设计成收所有权 `String`，调用方 clone 进去。
 28. **自定义 wgpu 管线走 iced_wgpu 0.14 官方 primitive 通路**（`primitive::{Primitive, Pipeline}` + `Renderer::draw_primitive`，`draw()` 返回 true 可直接画进 iced 的大 pass；见 `src/ui/glass_pipeline.rs`）。三个保命点：同层 flush 顺序固定 **quads→triangles→primitives→images→text**（layer.rs `start()/end()`），primitive 永远在同层 quad/mesh 之后、image/text 之前；`prepare` 拿到的 bounds **已带上层变换**（滚动 with_translation、reveal 位移），卡片矩形不用自己做平移数学；`Pipeline::trim()` 每帧末调用，帧内槽位计数靠它复位。
 29. **dst-read 混合（真 backdrop-filter / 逐像素混合模式）在 wgpu 27 下不可达**：primitive 的 `render()` 回调只给 `TextureView`，拿不到 `Texture` 句柄做 `copy_texture_to_texture`，wgpu 也没有 framebuffer fetch。已知底图时用**解析求值**替代读画布（glass.wgsl 在 fragment 里重算光球场——数学上还更准）。
 30. **双后端编译时 `iced::Renderer` 是 fallback 枚举**（`Primary`=wgpu、`Secondary`=tiny-skia，变体公开可 match），后端专属 widget 按变体分路（`frosted.rs`/`glass_pipeline.rs` 的背景 widget）。`iced::renderer` 模块是私有的，枚举要从 `iced_renderer` crate 引；wgpu 本体用 `iced::wgpu` 再导出（版本与 iced 锁死，**别单独加 wgpu 依赖**，否则 trait 签名对不上）。
