@@ -8,7 +8,7 @@ use crate::ui::icon;
 use crate::ui::modal::Dialog;
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono, txt, txt_bold};
-use iced::widget::{Column, column, row, space};
+use iced::widget::{container, Column, column, row, space};
 use iced::{Alignment, Element, Fill};
 
 pub fn view(app: &Dshnext) -> Element<'_, Message> {
@@ -52,43 +52,60 @@ fn toolbar_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Mess
         ));
     }
 
-    r = r
-        .push(space::horizontal().width(6.0))
-        .push(widgets::input(
-            "搜索插件名称或描述…",
-            &app.query,
-            Message::Query,
-            false,
-            pal,
-        ))
-        .push(space::horizontal().width(4.0))
-        .push(widgets::segmented(
-            vec![
-                (
-                    "已安装",
-                    app.plugin_tab == PluginTab::Installed,
-                    Message::SetPluginTab(PluginTab::Installed),
-                ),
-                (
-                    "插件市场",
-                    app.plugin_tab == PluginTab::Market,
-                    Message::SetPluginTab(PluginTab::Market),
-                ),
-            ],
-            pal,
-        ))
+    // 窄窗分两行：搜索框必须保住宽度（它是 Fill），否则被下拉+分段+按钮
+    // 挤成一条竖缝（截图实测几乎消失）。
+    let input = widgets::input(
+        "搜索插件名称或描述…",
+        &app.query,
+        Message::Query,
+        false,
+        pal,
+    );
+    let tabs = widgets::segmented(
+        vec![
+            (
+                "已安装",
+                app.plugin_tab == PluginTab::Installed,
+                Message::SetPluginTab(PluginTab::Installed),
+            ),
+            (
+                "插件市场",
+                app.plugin_tab == PluginTab::Market,
+                Message::SetPluginTab(PluginTab::Market),
+            ),
+        ],
+        pal,
+    );
+    let manual = button::btn(
         // 与分段控件拉开，别看着像第三个 tab
-        .push(space::horizontal().width(10.0))
-        .push(button::btn(
-            Spec::new("plg.manual", "手动安装", Variant::Secondary).size(BtnSize::Small),
-            pal,
-            &app.anim,
-            Some(Message::OpenDialog(Dialog::ManualPlugin)),
-            Some(Message::HoverEnter("plg.manual")),
-            Some(Message::HoverExit("plg.manual")),
-        ));
+        Spec::new("plg.manual", "手动安装", Variant::Secondary).size(BtnSize::Small),
+        pal,
+        &app.anim,
+        Some(Message::OpenDialog(Dialog::ManualPlugin)),
+        Some(Message::HoverEnter("plg.manual")),
+        Some(Message::HoverExit("plg.manual")),
+    );
 
-    let mut col = Column::new().push(r.width(Fill)).spacing(12);
+    let mut col = Column::new().spacing(12);
+    if app.narrow() {
+        col = col
+            .push(
+                r.push(space::horizontal())
+                    .push(container(input).width(Fill))
+                    .width(Fill),
+            )
+            .push(row![tabs, space::horizontal(), manual].width(Fill));
+    } else {
+        col = col.push(
+            r.push(space::horizontal().width(6.0))
+                .push(input)
+                .push(space::horizontal().width(4.0))
+                .push(tabs)
+                .push(space::horizontal().width(10.0))
+                .push(manual)
+                .width(Fill),
+        );
+    }
     if let Some(busy) = &app.busy {
         col = col.push(widgets::busy(busy.as_str(), pal));
     }
@@ -155,7 +172,7 @@ fn installed_list<'a>(
                 Message::OpenDialog(Dialog::RemovePlugin(p.name.clone())),
                 pal
             )],
-            false,
+            false, app.narrow(),
             pal,
         ));
     }
@@ -242,7 +259,7 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
             ]
             .spacing(2),
             row![install_btn(app, already, &m.source, pal)],
-            false,
+            false, app.narrow(),
             pal,
         ));
     }

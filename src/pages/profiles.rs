@@ -207,7 +207,7 @@ fn profile_row<'a>(
         )),
         main,
         actions,
-        is_selected,
+        is_selected, app.narrow(),
         pal,
     );
 

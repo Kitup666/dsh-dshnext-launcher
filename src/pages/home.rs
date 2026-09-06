@@ -37,7 +37,7 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
         "还没检测到 dsh，请先到「环境」页完成安装。"
     };
 
-    let narrow = app.win_size.map(|s| s.width < 1150.0).unwrap_or(false);
+    let narrow = app.narrow();
 
     let left = column![
         txt("DEEPSEEK HARNESS").size(FS_MICRO).color(pal.text_3),
@@ -303,7 +303,7 @@ fn instance_row<'a>(
         Some(widgets::icon_badge(widgets::dot(pal.ok), pal)),
         main,
         actions,
-        false,
+        false, app.narrow(),
         pal,
     )
 }

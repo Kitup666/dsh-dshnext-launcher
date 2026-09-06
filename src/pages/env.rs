@@ -93,7 +93,7 @@ fn offline_card<'a>(
                 pal
             )]
             .into(),
-            false,
+            false, app.narrow(),
             pal,
         ))
     };
@@ -209,7 +209,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
         ]
         .spacing(2),
         node_actions,
-        false,
+        false, app.narrow(),
         pal,
     ));
 
@@ -308,7 +308,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
         ]
         .spacing(2),
         dsh_actions,
-        false,
+        false, app.narrow(),
         pal,
     ));
 
@@ -344,7 +344,7 @@ fn detect_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Messa
             (!busy && node_ok).then_some(Message::InstallPnpm),
             pal,
         )],
-        false,
+        false, app.narrow(),
         pal,
     ));
 

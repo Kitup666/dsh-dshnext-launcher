@@ -113,6 +113,7 @@ pub fn list_row<'a, Message: Clone + 'a>(
     main: Column<'a, Message>,
     actions: Row<'a, Message>,
     selected: bool,
+    narrow: bool,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let mut r = Row::new().spacing(15).align_y(Alignment::Center);
@@ -138,12 +139,23 @@ pub fn list_row<'a, Message: Clone + 'a>(
                 snap: true,
             }),
     );
+    // 名字列 + 徽标一行（窄窗时这行独占整行宽，按钮组掉到下一行——
+    // 否则 Fill 的名字列被固定宽的按钮组挤成一条竖缝，文字逐字换行）。
+    let mut head = Row::new().spacing(15).align_y(Alignment::Center);
     if let Some(b) = badge {
-        r = r.push(b);
+        head = head.push(b);
     }
-    r = r
-        .push(container(main.spacing(3)).width(Fill))
-        .push(actions.spacing(7).align_y(Alignment::Center));
+    head = head.push(container(main.spacing(3)).width(Fill));
+    if narrow {
+        r = r.push(
+            column![head.width(Fill), actions.spacing(7)]
+                .spacing(10)
+                .width(Fill),
+        );
+    } else {
+        r = r.push(head.width(Fill));
+        r = r.push(actions.spacing(7).align_y(Alignment::Center));
+    }
 
     container(r)
         .width(Fill)

@@ -348,6 +348,12 @@ impl Dshnext {
         self.procs.iter().find(|p| p.profile == profile)
     }
 
+    /// 窗口是否落入「窄」档——各页响应式布局共用的唯一阈值，
+    /// 宽度来自 window 事件订阅（win_size）。
+    pub fn narrow(&self) -> bool {
+        self.win_size.map(|s| s.width < 1150.0).unwrap_or(false)
+    }
+
     /// 某 profile 可打开的 WebUI 地址：只认 stdout 里解析出来的
     /// （带 token）那条；进程记录里的裸地址开出来是 404，绝不退回它。
     pub fn url_of(&self, profile: &str) -> Option<String> {
