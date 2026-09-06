@@ -17,14 +17,39 @@ use crate::theme::{self, FS_SMALL, FS_TITLE, Palette, R_CARD, R_HERO};
 use crate::ui::{txt, txt_bold};
 use iced::widget::text::IntoFragment;
 use iced::widget::{Column, container};
-use iced::{Border, Color, Element, Fill, Padding, Shadow, Theme};
+use iced::{Border, Color, Element, Fill, Length, Padding, Shadow, Theme};
 
 /// 标准卡片容器：padding 24，圆角 16，shadow_card，磨砂（glass + 卡内颗粒）。
 pub fn card<'a, Message: 'static>(
     content: impl Into<Element<'a, Message>>,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
-    frosted(content, pal, Padding::from(24), R_CARD, pal.shadow_card)
+    frosted(content, pal, Padding::from(24), R_CARD, pal.shadow_card, Length::Shrink)
+}
+
+/// 满高卡片：控制台等要占满剩余高度的容器（Frosted 默认 Shrink 跟随内容）。
+pub fn card_fill<'a, Message: 'static>(
+    content: impl Into<Element<'a, Message>>,
+    pal: &'static Palette,
+) -> Element<'a, Message> {
+    frosted(content, pal, Padding::from(24), R_CARD, pal.shadow_card, Length::Fill)
+}
+
+/// 玻璃卡面的**等效不透明色**：shader 里 base 烤 navy 6% 再过 overlay 修正
+/// 的结果（远离光球处的卡面平区就是这个色）。给不进 shader 的小玻璃面
+/// （侧边栏选中胶囊）保持同色。亮色不修正，返回 glass 原色。
+pub fn glass_face(pal: &Palette) -> Color {
+    if pal.grain <= 0.0 {
+        return pal.glass;
+    }
+    let base = theme::lerp(pal.surface_1, GLASS_HUE_BOT, 0.06);
+    let gray = 0.5
+        + (crate::ui::glass_pipeline::OVERLAY_GRAY - 0.5)
+            * crate::ui::glass_pipeline::OVERLAY_STRENGTH;
+    let f = |c: f32| {
+        if c < 0.5 { 2.0 * c * gray } else { 1.0 - 2.0 * (1.0 - c) * (1.0 - gray) }
+    };
+    Color { r: f(base.r), g: f(base.g), b: f(base.b), a: 1.0 }
 }
 
 /// 英雄卡：比 `card()` 高一档（更大圆角 + 更宽内边距 + 更深阴影）。
@@ -32,7 +57,7 @@ pub fn card_hero<'a, Message: 'static>(
     content: impl Into<Element<'a, Message>>,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
-    frosted(content, pal, Padding::from(32), R_HERO, pal.shadow_hero)
+    frosted(content, pal, Padding::from(32), R_HERO, pal.shadow_hero, Length::Shrink)
 }
 
 /// 磨砂卡：Frosted 自定义容器（glass 底 + 卡内颗粒 + 内容在颗粒之上）。
@@ -42,6 +67,7 @@ fn frosted<'a, Message: 'static>(
     padding: Padding,
     radius: f32,
     shadow: Shadow,
+    height: Length,
 ) -> Element<'a, Message> {
     // 伪造 backdrop 的光球只在暗色给（grain>0 即暗色）；亮色 None。
     let backdrop = if pal.grain > 0.0 {
@@ -56,6 +82,7 @@ fn frosted<'a, Message: 'static>(
         pal.grain,
         backdrop,
     )
+    .height(height)
     .into()
 }
 

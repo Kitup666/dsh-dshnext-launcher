@@ -17,7 +17,7 @@ use crate::ui::icon;
 use crate::ui::modal;
 use crate::ui::reveal::reveal;
 use crate::ui::widgets;
-use crate::ui::{mono, titlebar, txt, txt_bold};
+use crate::ui::{card, mono, titlebar, txt, txt_bold};
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, space, stack};
 use iced::{
     Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme,
@@ -332,12 +332,13 @@ fn nav_item<'a>(app: &'a Dshnext, page: Page, pal: &'static Palette) -> Element<
 
     // 底色/描边按 act 插值。**描边色不能用半透明白往里插**（DESIGN.md §7.5 第 15 条：
     // 物理混色会把带色相的半透明放大），这里 card_border 本身就是中性白，安全。
-    // 选中底用 glass（半透明，和卡片一致的假高斯模糊）；透明插透明无碍。
+    // 选中底用玻璃卡面的等效不透明色（与 shader 卡面同色，见 card::glass_face）；
+    // 透明插透明无碍。
     let bg = theme::lerp(
-        // 未选中时的底是 hover 叠色，选中时是 glass。两者都要参与：
+        // 未选中时的底是 hover 叠色，选中时是卡面同色。两者都要参与：
         // 悬停着切页时不插 hover 会先闪回透明。
         theme::lerp(Color::TRANSPARENT, pal.hover, t),
-        pal.glass,
+        card::glass_face(pal),
         act,
     );
     let border_c = theme::with_alpha(pal.card_border, pal.card_border.a * act);

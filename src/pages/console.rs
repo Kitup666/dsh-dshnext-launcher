@@ -137,16 +137,15 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     // 这里不用 page_stack：它给的是 Shrink 的 Column，撑不满高度。
     column![
         head,
-        container(
+        // 磨砂大卡（与其他页的卡片同一条 shader 路径：场 + 修正 + 颗粒），
+        // 占满剩余高度，卡片内部自己滚（见 pages::view）。
+        card::card_fill(
             column![toolbar, body]
                 .spacing(14)
                 .width(Fill)
-                .height(Fill)
-        )
-        .width(Fill)
-        .height(Fill)
-        .padding(Padding::from(24))
-        .style(card::card_style(pal)),
+                .height(Fill),
+            pal,
+        ),
     ]
     .spacing(GAP_SECTION)
     .height(Fill)

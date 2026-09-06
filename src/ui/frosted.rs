@@ -98,6 +98,12 @@ impl<'a, Message> Frosted<'a, Message> {
             backdrop,
         }
     }
+
+    /// 覆盖高度（默认 Shrink 跟随内容；控制台等满高卡用 Fill）。
+    pub fn height(mut self, height: Length) -> Self {
+        self.height = height;
+        self
+    }
 }
 
 impl<Message> Widget<Message, iced::Theme, iced::Renderer> for Frosted<'_, Message>
