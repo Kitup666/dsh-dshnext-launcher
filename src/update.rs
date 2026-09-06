@@ -135,6 +135,8 @@ impl Dshnext {
                 if !self.maximized {
                     self.win_size = Some(s);
                 }
+                // 拖动期间开逐帧重画（见 resize_pump_until 注释）。
+                self.resize_pump_until = Some(Instant::now() + Duration::from_millis(250));
                 Task::none()
             }
             // OS 级关闭（Alt+F4 / 任务栏）：exit_on_close_request=false，
@@ -1215,7 +1217,11 @@ impl Dshnext {
                 None
             }),
         ];
-        if self.anim.is_animating() {
+        if self.anim.is_animating()
+            || self
+                .resize_pump_until
+                .is_some_and(|t| Instant::now() < t)
+        {
             subs.push(window::frames().map(Message::Tick));
         }
         if self.config.tray {

@@ -81,6 +81,10 @@ pub struct Dshnext {
     pub win_size: Option<iced::Size>,
     /// 窄布局档的迟滞状态（进入 <1120，退出 >1180）
     pub narrow_layout: bool,
+    /// 逐帧重画泵的截止时刻：拖动调窗时 DWM 会把上一帧拉伸到新窗口尺寸
+    /// （内容「放大再缩小」的残影），重画一快拉伸帧就停留不住。
+    /// 每次 Resized 续 250ms，停手后自然熄火——空闲零出帧纪律不破。
+    pub resize_pump_until: Option<Instant>,
 
     // ---- 导航与浮层 ----
     pub page: Page,
@@ -289,6 +293,7 @@ impl Dshnext {
             win_pos: None,
             win_size: None,
             narrow_layout: false,
+            resize_pump_until: None,
 
             page: Page::Home,
             prev_page: None,
