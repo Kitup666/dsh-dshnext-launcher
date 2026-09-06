@@ -369,6 +369,37 @@ fn open_ui_without_url_parks_pending() {
 }
 
 #[test]
+fn narrow_layout_has_hysteresis() {
+    let mut a = seeded_app();
+    use iced::window;
+    // 起始宽 960 → 窄档
+    drop(a.update(Message::WindowEvent(window::Event::Opened {
+        position: Some(iced::Point::ORIGIN),
+        size: iced::Size::new(960.0, 608.0),
+    })));
+    assert!(a.narrow());
+    // 1160：旧逻辑已经翻回宽档；迟滞下仍在窄档（要 >1180 才出）
+    drop(a.update(Message::WindowEvent(window::Event::Resized(iced::Size::new(
+        1160.0, 608.0,
+    )))));
+    assert!(a.narrow(), "1160 应留在窄档（抖动缓冲）");
+    // 1185 出窄档
+    drop(a.update(Message::WindowEvent(window::Event::Resized(iced::Size::new(
+        1185.0, 608.0,
+    )))));
+    assert!(!a.narrow());
+    // 1140：旧逻辑立刻进窄档；迟滞下要 <1120 才进
+    drop(a.update(Message::WindowEvent(window::Event::Resized(iced::Size::new(
+        1140.0, 608.0,
+    )))));
+    assert!(!a.narrow(), "1140 应留在宽档（抖动缓冲）");
+    drop(a.update(Message::WindowEvent(window::Event::Resized(iced::Size::new(
+        1100.0, 608.0,
+    )))));
+    assert!(a.narrow());
+}
+
+#[test]
 fn toggle_topmost_flips_config_and_draft() {
     let mut a = seeded_app();
     assert!(!a.config.always_on_top);

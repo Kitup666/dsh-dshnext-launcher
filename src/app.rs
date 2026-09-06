@@ -79,6 +79,8 @@ pub struct Dshnext {
     /// 只能这样全程跟踪（iced_runtime 0.14 全文无 get_position/get_size）。
     pub win_pos: Option<iced::Point>,
     pub win_size: Option<iced::Size>,
+    /// 窄布局档的迟滞状态（进入 <1120，退出 >1180）
+    pub narrow_layout: bool,
 
     // ---- 导航与浮层 ----
     pub page: Page,
@@ -286,6 +288,7 @@ impl Dshnext {
             maximized: false,
             win_pos: None,
             win_size: None,
+            narrow_layout: false,
 
             page: Page::Home,
             prev_page: None,
@@ -348,10 +351,12 @@ impl Dshnext {
         self.procs.iter().find(|p| p.profile == profile)
     }
 
-    /// 窗口是否落入「窄」档——各页响应式布局共用的唯一阈值，
-    /// 宽度来自 window 事件订阅（win_size）。
+    /// 窗口是否落入「窄」档——各页响应式布局共用的唯一开关。
+    /// 带迟滞（1120 进 / 1180 出，见 Resized 分支）：拖边经过阈值附近时
+    /// 手一抖宽度就在边界来回，无迟滞则整页布局跟着反复翻转，看起来
+    /// 是整页在颤。
     pub fn narrow(&self) -> bool {
-        self.win_size.map(|s| s.width < 1150.0).unwrap_or(false)
+        self.narrow_layout
     }
 
     /// 某 profile 可打开的 WebUI 地址：只认 stdout 里解析出来的

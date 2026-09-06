@@ -109,6 +109,7 @@ impl Dshnext {
             Message::WindowEvent(window::Event::Opened { position, size }) => {
                 self.win_pos = position;
                 self.win_size = Some(size);
+                self.narrow_layout = size.width < 1150.0;
                 // 置顶要等窗口真出来了才能设（main 里设得太早，FindWindowW 落空）。
                 if self.config.always_on_top {
                     crate::win32::set_topmost(crate::app::WINDOW_TITLE, true);
@@ -123,6 +124,14 @@ impl Dshnext {
                 Task::none()
             }
             Message::WindowEvent(window::Event::Resized(s)) => {
+                // 迟滞换档：进窄档要更窄（<1120），出窄档要更宽（>1180），
+                // 中间 60px 是抖动缓冲，布局在这个带里不翻转。
+                // 最大化时也要换档（宽屏必然是宽档），只是几何别覆盖还原态。
+                self.narrow_layout = if self.narrow_layout {
+                    s.width < 1180.0
+                } else {
+                    s.width < 1120.0
+                };
                 if !self.maximized {
                     self.win_size = Some(s);
                 }
