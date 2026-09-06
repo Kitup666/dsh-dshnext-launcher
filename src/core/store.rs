@@ -1,6 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
+/// 窗口几何（逻辑 px）。关窗时写入 config.json，开窗恢复；None = 从未保存。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct WindowGeom {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -16,8 +25,12 @@ pub struct Config {
     pub open_mode: String,
     /// 启动成功后是否自动打开 WebUI
     pub auto_open: bool,
-    /// 界面主题："light" | "dark"
+    /// 界面主题："light" | "dark" | "system"（跟随系统，启动时探测注册表）
     pub theme: String,
+    /// 开机自启（HKCU Run 键，用户级无需管理员）
+    pub autostart: bool,
+    /// 上次关闭时的窗口几何，开窗恢复
+    pub window: Option<WindowGeom>,
 }
 
 impl Default for Config {
@@ -31,6 +44,8 @@ impl Default for Config {
             open_mode: "window".into(),
             auto_open: true,
             theme: "light".into(),
+            autostart: false,
+            window: None,
         }
     }
 }

@@ -14,6 +14,7 @@
 pub mod envres;
 pub mod event;
 pub mod installs;
+pub mod platform;
 pub mod plugins;
 pub mod procman;
 pub mod profiles;

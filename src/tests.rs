@@ -184,7 +184,7 @@ fn esc_message_closes_dialog() {
 fn theme_toggle_flips_mode() {
     let mut a = seeded_app();
     assert_eq!(a.mode, Mode::Dark);
-    a.update(Message::ToggleTheme); // 落盘在返回的 Task 里，测试不执行它
+    a.update(Message::SetTheme("light")); // 落盘在返回的 Task 里，测试不执行它
     assert_eq!(a.mode, Mode::Light);
     assert_eq!(a.config.theme, "light");
     // 换主题后 view 仍应正常构造。

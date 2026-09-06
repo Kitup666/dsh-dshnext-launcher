@@ -45,9 +45,17 @@ fn main() -> iced::Result {
             .cloned()
     };
 
-    let mode = match opt("--theme").as_deref() {
-        Some("light") => Mode::Light,
+    // 主题解析：--theme 参数 > config.theme > 深色兜底。此前 config.theme 只
+    // 落盘从不回读（重启后永远回到默认）——这次修掉。
+    let cfg = crate::core::store::load();
+    let resolve = |s: &str| match s {
+        "light" => Mode::Light,
+        "system" if crate::core::platform::system_prefers_light() => Mode::Light,
         _ => Mode::Dark,
+    };
+    let mode = match opt("--theme").as_deref() {
+        Some(s @ ("light" | "dark" | "system")) => resolve(s),
+        _ => resolve(&cfg.theme),
     };
     let shot = opt("--shot").map(|path| Shot {
         path,
@@ -136,14 +144,26 @@ fn main() -> iced::Result {
             64,
         )
         .ok(),
-        // --tall：出图验收用，把长页面（设置页）一屏截完
+        // --tall：出图验收用，把长页面（设置页）一屏截完。**--tall 优先于
+        // 恢复的窗口几何**——出图要的是确定性的窗口，不是用户上次的。
         size: if flag("--tall") {
             iced::Size::new(1280.0, 1400.0)
         } else {
-            iced::Size::new(1280.0, 860.0)
+            cfg.window
+                .filter(|g| g.w >= 880.0 && g.h >= 560.0)
+                .map(|g| iced::Size::new(g.w, g.h))
+                .unwrap_or(iced::Size::new(1280.0, 860.0))
+        },
+        // 恢复上次关闭位置（几何非法/未存过走平台默认居中偏移）。
+        position: match cfg.window.filter(|g| g.w >= 880.0 && g.h >= 560.0) {
+            Some(g) => iced::window::Position::Specific(iced::Point::new(g.x, g.y)),
+            None => iced::window::Position::Default,
         },
         // 去掉系统标题栏与缩放边框，改自绘（src/ui/titlebar.rs）。
         decorations: false,
+        // 关窗权收归应用：CloseRequested 进 update（先存窗口几何再自己关），
+        // 否则 iced 直接关掉窗口，我们的保存任务来不及跑。
+        exit_on_close_request: false,
         platform_specific: iced::window::settings::PlatformSpecific {
             // 阴影必须留着：无边框 + 无阴影时窗口和桌面糊成一片，边界看不出来。
             // 代价是顶部会多出 1px 线（iced 文档明说），可以接受。

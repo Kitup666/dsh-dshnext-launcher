@@ -4,7 +4,7 @@
 //! 系统浏览器）。`config.json` 里的 `open_mode` 字段被忽略但不删——两代共用
 //! 同一个配置文件，删了会让上一代读不到自己的设置。
 
-use crate::app::{Dshnext, Message, Mode};
+use crate::app::{Dshnext, Message};
 use crate::theme::{FS_TINY, Palette};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::widgets::{self, Tone};
@@ -58,26 +58,24 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 }
 
 fn appearance<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
-    // 主题是即时生效项，不进 dirty（与上一代一致）。
-    let light_on = app.mode == Mode::Light;
+    // 主题是即时生效项，不进 dirty（与上一代一致）。选中态看落盘值而非解析后
+    // 的 mode：「跟随系统」在深色系统上选中的也必须是它自己。
+    let current = app.config.theme.as_str();
+    let opt = |label: &'static str, value: &'static str| {
+        let on = current == value;
+        (
+            label,
+            on,
+            if on { Message::Noop } else { Message::SetTheme(value) },
+        )
+    };
     card::card(
         column![
             card::card_title("外观"),
-            card::card_sub("切换后立即生效并落盘。浅色为默认；暗色是纯黑工作台风。", pal),
+            card::card_sub("切换后立即生效并落盘。「跟随系统」在下次启动时也会跟着系统走。", pal),
             space::vertical().height(6.0),
             widgets::segmented(
-                vec![
-                    (
-                        "浅色",
-                        light_on,
-                        if light_on { Message::Noop } else { Message::ToggleTheme }
-                    ),
-                    (
-                        "暗色",
-                        !light_on,
-                        if light_on { Message::ToggleTheme } else { Message::Noop }
-                    ),
-                ],
+                vec![opt("浅色", "light"), opt("深色", "dark"), opt("跟随系统", "system")],
                 pal
             ),
         ]
@@ -156,11 +154,17 @@ fn launch_behavior<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, M
                 Message::CfgAutoOpen,
                 pal
             ),
+            widgets::check(
+                "开机自动启动 DshDesk",
+                app.cfg_draft.autostart,
+                Message::CfgAutoStart,
+                pal
+            ),
             // 说明文字与卡片内容列同左边缘（不缩进到复选框标签下）。早先按「对齐它
             // 解释的那个标签」缩进了 24px（方框 15 + 间距 9），量下来确实对齐了标签，
             // 但它是整张卡里唯一不在内容列上的一行——同页另两处 field 的说明都在
             // 内容列上，扫下来就这一行突出来。表单卡里共享一条左边缘比「对齐标签」重要。
-            txt("Web 界面在系统默认浏览器中打开。")
+            txt("Web 界面在系统默认浏览器中打开；自启写入当前用户的 Run 键，无需管理员权限。")
                 .size(FS_TINY)
                 .color(pal.text_3),
         ]

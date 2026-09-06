@@ -70,6 +70,12 @@ pub struct Dshnext {
     pub autotest: bool,
     pub e2e: bool,
     pub maximized: bool,
+    /// 窗口几何跟踪（逻辑 px）：`window::events` 的 Moved/Resized 持续更新，
+    /// 关窗时写进 `config.window` 供下次恢复。最大化期间不更新——保存的是
+    /// 正常态几何，还原尺寸才对。iced 没有关窗时的 get_position 任务，
+    /// 只能这样全程跟踪（iced_runtime 0.14 全文无 get_position/get_size）。
+    pub win_pos: Option<iced::Point>,
+    pub win_size: Option<iced::Size>,
 
     // ---- 导航与浮层 ----
     pub page: Page,
@@ -140,13 +146,19 @@ pub enum Message {
     MaximizedChanged(bool),
     Close,
     Resize(window::Direction),
+    /// 全量窗口事件（Moved/Resized/CloseRequested…）：几何跟踪 + 关窗保存靠它。
+    /// 单窗口应用，Id 不值得携带。
+    WindowEvent(window::Event),
 
     // 导航与浮层
     Goto(Page),
     Select(String),
     /// 选中某个 profile 并跳到插件页（版本管理页的「插件」按钮）。
     GotoPlugins(String),
-    ToggleTheme,
+    /// 设置页主题三档（"light" | "dark" | "system"），即时生效并落盘。
+    SetTheme(&'static str),
+    /// "system" 的注册表探测结果（true = 系统偏好浅色）。
+    SystemThemeResolved(bool),
     OpenDialog(Dialog),
     CloseDialog,
     DialogInput(String),
@@ -205,6 +217,7 @@ pub enum Message {
     CfgApiKey(String),
     CfgPort(String),
     CfgAutoOpen(bool),
+    CfgAutoStart(bool),
     CfgNodeMirror(String),
     CfgNpmRegistry(String),
     CfgCatalog(String),
@@ -219,7 +232,9 @@ pub enum Message {
 impl Dshnext {
     pub fn new(mode: Mode, shot: Option<Shot>, autotest: bool, e2e: bool) -> Self {
         // 配置是同步读的（一个小 JSON），不值得为它开 Task。
-        let config = crate::core::store::load();
+        // 自启开关以注册表实际状态为准：config 只存意图，用户可能手动删过键。
+        let mut config = crate::core::store::load();
+        config.autostart = crate::core::platform::autostart_enabled();
         // 主题跟随 config；命令行 --theme 已在 main 里定过，这里以命令行为准。
         Self {
             mode,
@@ -230,6 +245,8 @@ impl Dshnext {
             autotest,
             e2e,
             maximized: false,
+            win_pos: None,
+            win_size: None,
 
             page: Page::Home,
             prev_page: None,
@@ -300,6 +317,7 @@ impl Dshnext {
         a.api_key != b.api_key
             || a.port != b.port
             || a.auto_open != b.auto_open
+            || a.autostart != b.autostart
             || a.node_mirror != b.node_mirror
             || a.npm_registry != b.npm_registry
             || a.plugin_catalog_url != b.plugin_catalog_url

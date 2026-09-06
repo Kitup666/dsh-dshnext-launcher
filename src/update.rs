@@ -15,7 +15,7 @@ impl Dshnext {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         // 交互链路取证：--e2e / 手动点击时用 RUST_LOG=dshnext=debug 看消息是否到达。
         // Tick 与 ToastTick 是高频的，排除掉免得把日志冲掉。
-        if !matches!(message, Message::Tick(_) | Message::ToastTick(_)) {
+        if !matches!(message, Message::Tick(_) | Message::ToastTick(_) | Message::WindowEvent(_)) {
             log::debug!("msg {message:?}");
         }
         match message {
@@ -101,10 +101,29 @@ impl Dshnext {
                 self.maximized = v;
                 Task::none()
             }
-            Message::Close => match self.window {
-                Some(id) => window::close(id),
-                None => iced::exit(),
-            },
+            Message::Close => self.close_window(),
+            Message::WindowEvent(window::Event::Opened { position, size }) => {
+                self.win_pos = position;
+                self.win_size = Some(size);
+                Task::none()
+            }
+            // 最大化期间不更新几何：保存的必须是还原态尺寸（见 app.win_pos 注释）。
+            Message::WindowEvent(window::Event::Moved(p)) => {
+                if !self.maximized {
+                    self.win_pos = Some(p);
+                }
+                Task::none()
+            }
+            Message::WindowEvent(window::Event::Resized(s)) => {
+                if !self.maximized {
+                    self.win_size = Some(s);
+                }
+                Task::none()
+            }
+            // OS 级关闭（Alt+F4 / 任务栏）：exit_on_close_request=false，
+            // 关窗权在我们，先存几何再关。
+            Message::WindowEvent(window::Event::CloseRequested) => self.close_window(),
+            Message::WindowEvent(_) => Task::none(),
             Message::Resize(dir) => match self.window {
                 Some(id) => window::drag_resize(id, dir),
                 None => Task::none(),
@@ -144,22 +163,43 @@ impl Dshnext {
                 }
                 Task::none()
             }
-            Message::ToggleTheme => {
-                self.mode = match self.mode {
-                    Mode::Dark => Mode::Light,
-                    Mode::Light => Mode::Dark,
-                };
-                // 主题即时落盘，不跟设置页的 dirty 机制搅在一起（与上一代一致）。
-                let theme = match self.mode {
-                    Mode::Dark => "dark",
-                    Mode::Light => "light",
-                };
-                self.config.theme = theme.into();
-                self.cfg_draft.theme = theme.into();
+            Message::SetTheme(t) => match t {
+                // "system" 要查注册表（reg.exe 子进程几十 ms），别在 update 主线程
+                // 同步等——丢到阻塞线程池，结果回来再落模式。
+                "system" => Task::perform(
+                    async {
+                        tokio::task::spawn_blocking(crate::core::platform::system_prefers_light)
+                            .await
+                            .unwrap_or(false)
+                    },
+                    Message::SystemThemeResolved,
+                ),
+                t => {
+                    self.mode = match t {
+                        "light" => Mode::Light,
+                        _ => Mode::Dark,
+                    };
+                    self.config.theme = t.into();
+                    self.cfg_draft.theme = t.into();
+                    let cfg = self.config.clone();
+                    Task::perform(async move { crate::core::store::save(&cfg) }, |r| {
+                        Message::ConfigSaved(r)
+                    })
+                }
+            },
+            Message::SystemThemeResolved(light) => {
+                // mode 落探测结果，落盘值仍是 "system"（下次启动继续跟随）。
+                self.mode = if light { Mode::Light } else { Mode::Dark };
+                self.config.theme = "system".into();
+                self.cfg_draft.theme = "system".into();
                 let cfg = self.config.clone();
                 Task::perform(async move { crate::core::store::save(&cfg) }, |r| {
                     Message::ConfigSaved(r)
                 })
+            }
+            Message::CfgAutoStart(v) => {
+                self.cfg_draft.autostart = v;
+                Task::none()
             }
             Message::OpenDialog(d) => {
                 self.draft = d.initial();
@@ -565,9 +605,16 @@ impl Dshnext {
             Message::SaveConfig => {
                 self.config = self.cfg_draft.clone();
                 let cfg = self.config.clone();
-                Task::perform(async move { crate::core::store::save(&cfg) }, |r| {
-                    Message::ConfigSaved(r)
-                })
+                // 自启注册表随保存一起应用（幂等）：开关状态以注册表为准，
+                // config 只存意图。
+                Task::perform(
+                    async move {
+                        crate::core::store::save(&cfg)?;
+                        crate::core::platform::set_autostart(cfg.autostart)?;
+                        Ok(())
+                    },
+                    |r: Result<(), String>| Message::ConfigSaved(r),
+                )
             }
             Message::ConfigSaved(result) => {
                 match result {
@@ -728,14 +775,38 @@ impl Dshnext {
         Task::none()
     }
 
+    /// 关窗：先把几何写进 config.json 再关。**必须同步写**——走 Task 的话，
+    /// 进程可能在落盘前就随窗口一起退出了。
+    fn close_window(&mut self) -> Task<Message> {
+        if let (Some(p), Some(s)) = (self.win_pos, self.win_size) {
+            self.config.window = Some(crate::core::store::WindowGeom {
+                x: p.x,
+                y: p.y,
+                w: s.width,
+                h: s.height,
+            });
+            self.cfg_draft = self.config.clone();
+            if let Err(e) = crate::core::store::save(&self.config) {
+                log::warn!("保存窗口几何失败: {e}");
+            }
+        }
+        match self.window {
+            Some(id) => window::close(id),
+            None => iced::exit(),
+        }
+    }
+
     /// 空闲零订阅（DESIGN.md §8 第 1 条）：
     /// - `frames()` 只在动画期间挂
     /// - 进程轮询只在有实例在跑时挂
     /// - toast 清理只在有 toast 时挂
     /// - core 事件流是被动的，后端不发就不产消息
+    /// - `window::events()` 同理被动：不拖动/缩放/关窗就没有事件
     pub fn subscription(&self) -> Subscription<Message> {
         let mut subs = vec![
             window::open_events().map(Message::Opened),
+            // 几何跟踪与关窗保存的数据源（Moved/Resized/CloseRequested）。
+            window::events().map(|(_, e)| Message::WindowEvent(e)),
             bridge::events().map(Message::Core),
             iced::event::listen_with(|event, _status, _id| {
                 let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
