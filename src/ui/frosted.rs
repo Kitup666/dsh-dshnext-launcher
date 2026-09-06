@@ -67,9 +67,11 @@ impl<'a, Message> Frosted<'a, Message> {
         cursor: mouse::Cursor,
         clipped: Rectangle,
     ) {
-        let bounds = layout.bounds();
         let child = layout.children().next().unwrap();
-        renderer.with_layer(bounds, |renderer| {
+        // 层边界必须用**裁剪后**的矩形：iced 0.14 的 push_clip 不与父裁剪
+        // 求交（AGENTS.md 坑 31），传 bounds 会逃出 scrollable 的裁剪层——
+        // 滚动时卡面/内容盖过标题栏带（用户抓的 bug）。
+        renderer.with_layer(clipped, |renderer| {
             self.content.as_widget().draw(
                 tree,
                 renderer,
@@ -171,11 +173,11 @@ where
                 };
                 iced::widget::container::draw_background(r, &shadow_style, bounds);
 
-                r.with_layer(bounds, |r| {
+                r.with_layer(clipped, |r| {
                     use iced_wgpu::primitive::Renderer as _;
                     if let Some(glass) = extract_glass(&self.style, self.grain) {
                         r.draw_primitive(
-                            bounds,
+                            clipped,
                             crate::ui::glass_pipeline::GlassQuad::card(
                                 glass,
                                 self.backdrop.unwrap(),
@@ -202,7 +204,8 @@ where
         //    光球 mesh 和颗粒 image 放同一层：同层 pass 序 mesh→image 正好
         //    是我们想要的叠放；内容再开一层，绝不与它们同层。
         if self.grain > 0.0 || self.backdrop.is_some() {
-            renderer.with_layer(bounds, |renderer| {
+            // 层边界用裁剪后矩形——嵌套层不继承 scrollable 的裁剪（坑 31）。
+            renderer.with_layer(clipped, |renderer| {
                 // 平移量由 viewport 反推（见模块顶注释）：viewport.pos =
                 // 主区原点 + 滚动平移 → 卡片窗口位置 = 原点 + bounds.pos - 平移。
                 let (ox, oy) = MAIN_ORIGIN;
@@ -250,7 +253,7 @@ where
                                 ),
                                 Size::new(tw, th),
                             );
-                            if tile.intersection(&bounds).is_some() {
+                            if tile.intersection(&clipped).is_some() {
                                 renderer.draw_image(img.clone(), tile, clipped);
                             }
                         }

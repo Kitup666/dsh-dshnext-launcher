@@ -103,64 +103,81 @@ fn rounded_box_sdf(p: vec2<f32>, size: vec2<f32>, corners: vec4<f32>) -> f32 {
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let phys = u.rect.xy + in.uv * u.rect.zw;
     let logical = phys / u.params_a.x;
-    let is_card = u.params_a.z > 0.5;
+    let mode = u.params_a.z;
 
     // ── 模糊层：光球场（背景/卡片同一份求值）──
     let f0 = orb(phys, u.orb0, u.orbcol0);
     let f1 = orb(phys, u.orb1, u.orbcol1);
 
-    if (!is_card) {
+    if (mode < 0.5) {
         // 背景模式：透明底上按绘制顺序叠两球，输出 premultiplied
         let a = f1.a + f0.a * (1.0 - f1.a);
         let rgb = (f0.rgb * f0.a * (1.0 - f1.a) + f1.rgb * f1.a) / max(a, 1e-6);
         return vec4<f32>(rgb * a, a);
     }
 
-    // ── 面层：sheen→base 渐变（不透明）──
-    var rgb = face_gradient(phys);
+    if (mode < 1.5) {
+        // ── 卡片模式：完整层栈 ──
+        // 面层：sheen→base 渐变（不透明）
+        var rgb = face_gradient(phys);
 
-    // 光球按序叠上（straight-alpha over，与 mesh 逐球混合一致）
+        // 光球按序叠上（straight-alpha over，与 mesh 逐球混合一致）
+        rgb = rgb * (1.0 - f0.a) + f0.rgb * f0.a;
+        rgb = rgb * (1.0 - f1.a) + f1.rgb * f1.a;
+
+        // ── 颜色修正层：sRGB 空间 overlay 灰（苹果暗色做法）──
+        let gray = u.params_a.w;
+        if (gray > 0.0) {
+            var s = vec3<f32>(
+                linear_to_srgb(rgb.r), linear_to_srgb(rgb.g), linear_to_srgb(rgb.b)
+            );
+            s = vec3<f32>(
+                overlay_channel(s.r, gray),
+                overlay_channel(s.g, gray),
+                overlay_channel(s.b, gray),
+            );
+            rgb = vec3<f32>(
+                srgb_to_linear(s.r), srgb_to_linear(s.g), srgb_to_linear(s.b)
+            );
+        }
+
+        // ── 噪点层：窗口锚定颗粒场（窗口逻辑像素直接当 uv）──
+        if (u.params_b.z > 0.0) {
+            let uv = logical / u.grain_tile.xy;
+            let g = textureSample(grain_tex, grain_samp, uv);
+            let ga = g.a * u.params_b.z;
+            rgb = rgb * (1.0 - ga) + g.rgb * ga;
+        }
+
+        // ── 圆角 + 描边（quad.wgsl 同款 SDF，物理 px）──
+        let radius = vec4<f32>(u.params_a.y);
+        let dist = rounded_box_sdf(
+            -(phys - u.rect.xy - u.rect.zw / 2.0) * 2.0,
+            u.rect.zw,
+            radius * 2.0,
+        ) / 2.0;
+
+        let width = u.border.w;
+        if (width > 0.0) {
+            let k = clamp(0.5 + dist + width, 0.0, 1.0);
+            rgb = mix(rgb, u.border.rgb, k);
+        }
+
+        let alpha = clamp(0.5 - dist, 0.0, 1.0);
+        return vec4<f32>(rgb * alpha, alpha);
+    }
+
+    // ── 虚化帏幕（mode 2）：不透明背景场（bg_app + 光球，与窗外背景续上）
+    //    沿滚动方向做 alpha 渐隐——滚动内容经过顶/底边时逐渐融进背景。
+    var rgb = u.sheen.rgb;
     rgb = rgb * (1.0 - f0.a) + f0.rgb * f0.a;
     rgb = rgb * (1.0 - f1.a) + f1.rgb * f1.a;
 
-    // ── 颜色修正层：sRGB 空间 overlay 灰（苹果暗色做法）──
-    let gray = u.params_a.w;
-    if (gray > 0.0) {
-        var s = vec3<f32>(
-            linear_to_srgb(rgb.r), linear_to_srgb(rgb.g), linear_to_srgb(rgb.b)
-        );
-        s = vec3<f32>(
-            overlay_channel(s.r, gray),
-            overlay_channel(s.g, gray),
-            overlay_channel(s.b, gray),
-        );
-        rgb = vec3<f32>(
-            srgb_to_linear(s.r), srgb_to_linear(s.g), srgb_to_linear(s.b)
-        );
-    }
-
-    // ── 噪点层：窗口锚定颗粒场（窗口逻辑像素直接当 uv）──
-    if (u.params_b.z > 0.0) {
-        let uv = logical / u.grain_tile.xy;
-        let g = textureSample(grain_tex, grain_samp, uv);
-        let ga = g.a * u.params_b.z;
-        rgb = rgb * (1.0 - ga) + g.rgb * ga;
-    }
-
-    // ── 圆角 + 描边（quad.wgsl 同款 SDF，物理 px）──
-    let radius = vec4<f32>(u.params_a.y);
-    let dist = rounded_box_sdf(
-        -(phys - u.rect.xy - u.rect.zw / 2.0) * 2.0,
-        u.rect.zw,
-        radius * 2.0,
-    ) / 2.0;
-
-    let width = u.border.w;
-    if (width > 0.0) {
-        let k = clamp(0.5 + dist + width, 0.0, 1.0);
-        rgb = mix(rgb, u.border.rgb, k);
-    }
-
-    let alpha = clamp(0.5 - dist, 0.0, 1.0);
+    // 渐隐：从**锚定边**量距离（顶帏量 uv.y、底帏量 1−uv.y），除以带高
+    // （物理 px，grain_tile.x）。贴边 alpha=1、内缘 0，smoothstep 两头柔。
+    // 方向旗在 grain_tile.y（0=顶帏、1=底帏）。
+    let from_edge = select(1.0 - in.uv.y, in.uv.y, u.grain_tile.y < 0.5);
+    let d = clamp(from_edge * u.rect.w / u.grain_tile.x, 0.0, 1.0);
+    let alpha = 1.0 - smoothstep(0.0, 1.0, d);
     return vec4<f32>(rgb * alpha, alpha);
 }

@@ -12,6 +12,7 @@ pub mod settings;
 use crate::app::{Dshnext, Message};
 use crate::theme::{self, FS_BODY, FS_MICRO, FS_TINY, FS_TITLE, Palette};
 use crate::ui::anim;
+use crate::ui::glass_pipeline::fade_veil;
 use crate::ui::glow_mesh;
 use crate::ui::icon;
 use crate::ui::modal;
@@ -107,14 +108,25 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             .padding(Padding::from(44).top(44))
             .into()
     } else {
-        scrollable(
-            container(page_body)
-                .width(Fill)
-                .height(Fill)
-                .padding(Padding::from(44).top(44)),
-        )
-        .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
-        .style(widgets::slim_scroll_style(pal))
+        // 滚动页叠顶/底虚化帏幕：内容滚过主区上下边时渐隐进背景（帏幕 =
+        // 不透明背景场 + 带高 alpha 渐隐，见 glass_pipeline::fade_veil）。
+        // 带高对齐内容 padding：静止时帏幕只罩住空白，看不见；滚动时才显形。
+        stack![
+            scrollable(
+                container(page_body)
+                    .width(Fill)
+                    .height(Fill)
+                    .padding(Padding::from(44).top(44)),
+            )
+            .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
+            .style(widgets::slim_scroll_style(pal))
+            .width(Fill)
+            .height(Fill),
+            // 顶帏窄于顶 padding：稍滚一点标题不该整个被吃掉，24px 只柔化
+            // 贴边瞬间；底帏对齐底 padding 44。
+            fade_veil(pal, 24.0, true),
+            fade_veil(pal, 44.0, false),
+        ]
         .width(Fill)
         .height(Fill)
         .into()

@@ -52,24 +52,45 @@ pub struct CardGlass {
     pub grain_tile: (f32, f32),
 }
 
-/// 一个玻璃 quad。`card: None` = 背景模式（只画光球场）。
+/// 一个玻璃 quad 的绘制模式。shader 里 mode：0=背景、1=卡片、2=帏幕。
 /// 生命周期：每帧 draw 时构造，prepare 后即弃；slot 存管线里的
 /// uniform 缓冲槽位号（prepare 无 mut self，用原子回写；Primitive
 /// 要求 Send+Sync，不能用 Cell）。
 #[derive(Debug)]
 pub struct GlassQuad {
-    pub card: Option<CardGlass>,
+    pub kind: Kind,
     pub orbs: [(Point, f32, Color); 2],
     slot: AtomicU32,
 }
 
+#[derive(Debug)]
+pub enum Kind {
+    /// 只画光球场（透明底，premultiplied 输出）。
+    Background,
+    /// 卡片完整层栈（面层渐变→场→overlay→颗粒→圆角描边）。
+    Card(CardGlass),
+    /// 滚动虚化帏幕：不透明背景场（bg_app + 光球，与窗外续上），
+    /// 沿带高做 alpha 渐隐——滚动内容经过顶/底边时融进背景。
+    /// band 逻辑 px；top=true 时贴上边不透明、向下渐隐。
+    Veil { bg: Color, band: f32, top: bool },
+}
+
 impl GlassQuad {
     pub fn background(orbs: [(Point, f32, Color); 2]) -> Self {
-        Self { card: None, orbs, slot: AtomicU32::new(0) }
+        Self { kind: Kind::Background, orbs, slot: AtomicU32::new(0) }
     }
 
     pub fn card(glass: CardGlass, orbs: [(Point, f32, Color); 2]) -> Self {
-        Self { card: Some(glass), orbs, slot: AtomicU32::new(0) }
+        Self { kind: Kind::Card(glass), orbs, slot: AtomicU32::new(0) }
+    }
+
+    pub fn veil(
+        bg: Color,
+        band: f32,
+        top: bool,
+        orbs: [(Point, f32, Color); 2],
+    ) -> Self {
+        Self { kind: Kind::Veil { bg, band, top }, orbs, slot: AtomicU32::new(0) }
     }
 }
 
@@ -131,7 +152,15 @@ impl Primitive for GlassQuad {
             *spec = [c.x, c.y, radius * s, col[3]];
             *col_slot = [col[0], col[1], col[2], 0.0];
         }
-        if let Some(g) = &self.card {
+        // 帏幕：sheen 扛背景底色，grain_tile.x 扛带高（物理 px）、
+        // .y 扛方向旗（0=顶帏、1=底帏）——shader 模式 2 的约定。
+        if let Kind::Veil { bg, band, top } = &self.kind {
+            let c = linear(*bg);
+            u.params_a[2] = 2.0;
+            u.sheen = [c[0], c[1], c[2], 0.0];
+            u.grain_tile = [band * s, if *top { 0.0 } else { 1.0 }, 0.0, 0.0];
+        }
+        if let Kind::Card(g) = &self.kind {
             u.params_a[1] = g.radius * s;
             u.params_a[2] = 1.0;
             // 等效灰：gray_eff = 0.5 + (gray − 0.5)·strength（0.5 = 恒等）
@@ -420,6 +449,120 @@ where
     Message: 'static,
 {
     fn from(w: BackgroundField) -> Self {
+        Element::new(w)
+    }
+}
+
+// ── 滚动虚化帏幕 widget ────────────────────────────────────────────────
+
+/// 滚动内容在顶/底边的渐隐帏幕：wgpu 走 shader 模式 2（不透明背景场
+/// bg_app + 光球 + 带高 alpha 渐隐，与窗外背景续上）；tiny-skia 回退
+/// fill_quad 两停线性渐变。Fill×Fill 布局，带只占靠边 band 逻辑 px，
+/// 其余区域 alpha=0——别按带高收缩，stack 里要盖住整个滚动区。
+///
+/// 事件透传：不实现 update，stack 逆序派发时返回 Ignored，滚动区
+/// （前一个孩子）照常收滚轮/拖拽。
+pub fn fade_veil<Message: 'static>(
+    pal: &'static crate::theme::Palette,
+    band: f32,
+    top: bool,
+) -> Element<'static, Message> {
+    FadeVeil { pal, band, top }.into()
+}
+
+struct FadeVeil {
+    pal: &'static crate::theme::Palette,
+    band: f32,
+    top: bool,
+}
+
+impl<Message> Widget<Message, iced::Theme, iced::Renderer> for FadeVeil
+where
+    Message: 'static,
+{
+    fn size(&self) -> Size<Length> {
+        Size::new(Length::Fill, Length::Fill)
+    }
+
+    fn layout(
+        &mut self,
+        _tree: &mut Tree,
+        _renderer: &iced::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        layout::Node::new(limits.max())
+    }
+
+    fn draw(
+        &self,
+        _state: &Tree,
+        renderer: &mut iced::Renderer,
+        _theme: &iced::Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+    ) {
+        let bounds = layout.bounds();
+        match renderer {
+            Fallback::Primary(r) => {
+                use iced_wgpu::primitive::Renderer as _;
+                let quad = GlassQuad::veil(
+                    self.pal.bg_app,
+                    self.band,
+                    self.top,
+                    glow_mesh::ambient_specs(self.pal),
+                );
+                r.draw_primitive(bounds, quad);
+            }
+            Fallback::Secondary(r) => {
+                // 回退不用渐变 quad API：两三角形 mesh，顶点 alpha 直落
+                // （与光球回退同一套 Mesh::Solid 机制）。
+                use iced::advanced::graphics::mesh::{Indexed, Mesh, SolidVertex2D};
+                use iced::advanced::graphics::mesh::Renderer as _;
+                let bg = self.pal.bg_app;
+                let clear = iced::Color { a: 0.0, ..bg };
+                let pack = iced::advanced::graphics::color::pack;
+                let h = self.band.min(bounds.height);
+                let (y0, y1) = if self.top {
+                    (0.0, h)
+                } else {
+                    (bounds.height - h, bounds.height)
+                };
+                let (c_edge, c_inner) = if self.top { (bg, clear) } else { (clear, bg) };
+                let w = bounds.width;
+                let vertices = vec![
+                    SolidVertex2D { position: [0.0, y0], color: pack(c_edge) },
+                    SolidVertex2D { position: [w, y0], color: pack(c_edge) },
+                    SolidVertex2D { position: [0.0, y1], color: pack(c_inner) },
+                    SolidVertex2D { position: [w, y1], color: pack(c_inner) },
+                ];
+                r.draw_mesh(Mesh::Solid {
+                    buffers: Indexed { vertices, indices: vec![0, 1, 2, 1, 3, 2] },
+                    transformation: iced::Transformation::IDENTITY,
+                    clip_bounds: bounds,
+                });
+            }
+        }
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &Tree,
+        _layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+        _renderer: &iced::Renderer,
+    ) -> mouse::Interaction {
+        mouse::Interaction::None
+    }
+}
+
+impl<Message> From<FadeVeil> for Element<'static, Message>
+where
+    Message: 'static,
+{
+    fn from(w: FadeVeil) -> Self {
         Element::new(w)
     }
 }

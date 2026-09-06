@@ -91,6 +91,8 @@
 28. **自定义 wgpu 管线走 iced_wgpu 0.14 官方 primitive 通路**（`primitive::{Primitive, Pipeline}` + `Renderer::draw_primitive`，`draw()` 返回 true 可直接画进 iced 的大 pass；见 `src/ui/glass_pipeline.rs`）。三个保命点：同层 flush 顺序固定 **quads→triangles→primitives→images→text**（layer.rs `start()/end()`），primitive 永远在同层 quad/mesh 之后、image/text 之前；`prepare` 拿到的 bounds **已带上层变换**（滚动 with_translation、reveal 位移），卡片矩形不用自己做平移数学；`Pipeline::trim()` 每帧末调用，帧内槽位计数靠它复位。
 29. **dst-read 混合（真 backdrop-filter / 逐像素混合模式）在 wgpu 27 下不可达**：primitive 的 `render()` 回调只给 `TextureView`，拿不到 `Texture` 句柄做 `copy_texture_to_texture`，wgpu 也没有 framebuffer fetch。已知底图时用**解析求值**替代读画布（glass.wgsl 在 fragment 里重算光球场——数学上还更准）。
 30. **双后端编译时 `iced::Renderer` 是 fallback 枚举**（`Primary`=wgpu、`Secondary`=tiny-skia，变体公开可 match），后端专属 widget 按变体分路（`frosted.rs`/`glass_pipeline.rs` 的背景 widget）。`iced::renderer` 模块是私有的，枚举要从 `iced_renderer` crate 引；wgpu 本体用 `iced::wgpu` 再导出（版本与 iced 锁死，**别单独加 wgpu 依赖**，否则 trait 签名对不上）。
+31. **嵌套 `with_layer` 的 bounds 不与父裁剪求交。** `push_clip`（iced_graphics layer.rs）直接 `layers.push(with_bounds(bounds))`，不复交——scrollable 用 `with_layer(visible_bounds)` 裁内容，里面的 frosted 卡片再开自己的层时若传**内容坐标的全尺寸 bounds**，就逃出滚动裁剪：滚上去的卡片画到标题栏上。修法：层边界一律传 `bounds.intersection(viewport)`（frosted.rs 的 `clipped`）。viewport 已是内容坐标系，push_clip 会乘上层变换把它变回物理坐标，不用再手算滚动偏移。
+32. **滚动页顶/底渐隐帏幕（`glass_pipeline::fade_veil`，shader 模式 2）是不透明背景场 + 带高 alpha 渐隐**，色 = bg_app + 光球，与窗外背景续上；顶帏带宽必须**窄于**内容顶 padding（现 24 < 44）——等宽的话稍滚一点首行标题就整个被吃掉（用户实测否掉 44）。帏幕不实现 update，stack 逆序派发返回 Ignored，滚轮/拖拽照常到达 scrollable。
 
 ## 后端复用（core/，抄自第一代）
 
