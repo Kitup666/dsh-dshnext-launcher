@@ -24,7 +24,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             Some(Message::OpenDialog(Dialog::CreateProfile)),
             Some(Message::HoverEnter("prof.new")),
             Some(Message::HoverExit("prof.new")),
-        )),
+        )), app.narrow(),
         pal,
     );
 

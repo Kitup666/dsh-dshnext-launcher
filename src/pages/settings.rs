@@ -41,7 +41,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let head = widgets::page_head(
         "设置",
         "设置保存在启动器数据目录的 config.json 里；API Key 仅在启动时注入子进程环境变量。",
-        Some(right.into()),
+        Some(right.into()), app.narrow(),
         pal,
     );
 

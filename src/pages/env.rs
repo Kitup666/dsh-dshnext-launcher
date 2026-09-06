@@ -25,7 +25,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             Some(Message::RefreshEnv),
             Some(Message::HoverEnter("env.refresh")),
             Some(Message::HoverExit("env.refresh")),
-        )),
+        )), app.narrow(),
         pal,
     );
 

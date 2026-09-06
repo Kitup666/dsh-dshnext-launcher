@@ -457,6 +457,7 @@ pub fn page_head<'a, Message: 'a>(
     title: &'a str,
     desc: &'a str,
     actions: Option<Element<'a, Message>>,
+    narrow: bool,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     let left = column![
@@ -464,10 +465,17 @@ pub fn page_head<'a, Message: 'a>(
         txt(desc).size(FS_BODY).color(pal.text_3),
     ]
     .spacing(5);
+    // 窄窗：动作组（标签+按钮）掉到标题下方右对齐。挤在标题右侧的话，
+    // 固定宽的按钮/标签没有收缩余地，「保存」会竖排成保/存（截图实测）。
     let mut r = row![left, space::horizontal()]
         .width(Fill)
         .align_y(Alignment::Center);
     if let Some(a) = actions {
+        if narrow {
+            return column![r, row![space::horizontal(), a]]
+                .spacing(10)
+                .into();
+        }
         r = r.push(a);
     }
     r.into()

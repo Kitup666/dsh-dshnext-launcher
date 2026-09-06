@@ -26,7 +26,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let head = widgets::page_head(
         "控制台",
         "harness 进程、插件安装和环境安装的实时输出（最多保留 2000 行）。",
-        None,
+        None, app.narrow(),
         pal,
     );
 

@@ -17,7 +17,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let head = widgets::page_head(
         "插件管理",
         "harness 里一切能力都是插件。每个版本有独立的插件集，互不影响。",
-        None,
+        None, app.narrow(),
         pal,
     );
 
