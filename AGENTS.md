@@ -116,6 +116,13 @@
 7. **交互实测用 `phase0/tools/interact-probe.ps1`**：模态、ESC、Ctrl+1..6、侧边栏点击一套跑完。坐标是**逻辑像素**，脚本按 1.25 缩放换算；窗口 1600×1120 物理 = 1280×896 逻辑，x 超过 1280 就点到客户区外面去了（第一版就是这么白点的）。
 8. **「在途请求」不能只看结果是否为空判重。** 反复进环境页会重复拉版本列表——`dsh_versions.is_empty()` 在请求飞在半路时仍为真。要单独一个 `versions_loading` 标志。
 
+## 目录迁移（core/migrate.rs）
+
+1. **npm 依赖树里全是 NTFS junction，`fs::copy` 对目录链接直接「拒绝访问 (os error 5)」。** 第一版迁移就在 `home/profiles/node_modules` 半路翻车。检测用 `fs::symlink_metadata().is_symlink()`（**Python 的 `os.path.islink` 不认 junction**，排查时别被骗）；重建用 `junction` crate（std 没有 `symlink_junction`，`symlink_dir` 又要特权）。junction 目标是带 `\\?\` 前缀的绝对路径，重建前必须剥前缀做旧根→新根改写，否则删了旧位置链接全断。
+2. **迁移是两阶段：先全量复制（单文件 3 次退避重试，吃杀软/索引器的瞬时锁），全部成功才删源。** 复制失败 = 什么都不动原地可重试；删除失败只记 warnings（数据已双份）。
+3. **home 复制必须排在数据目录删除之前、「当前生效 home」必须在改道之前抓取**——默认 home 就住在数据目录里（`<数据>/home`），顺序不对会把要复制的源先删掉。这条 bug 曾被测试执行顺序掩盖，加了 junction 测试才现形；迁移测试务必把 home 覆盖设成非默认值再跑。
+4. **验证迁移结果别信启动日志的 `data_dir=`**——main.rs 那行打的是迁移前捕获的局部变量。看 pointer 文件（`%LOCALAPPDATA%\DshDesk\launcher-dir.txt`）或迁移后新起的进程。
+
 ## NSIS 安装包（packaging/）
 
 1. **`makensis` 报 `Can't open output file` 通常是上一次装测的 setup 进程还活着。** NSIS 静默安装（`/S`）在文件拷完后自身可能仍驻留，占着输出文件名。`tasklist //FI "IMAGENAME eq Dshnext_0.1.0_x64-setup.exe"` 一查就见，`taskkill //F //PID` 掉再编。
