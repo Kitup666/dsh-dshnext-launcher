@@ -20,9 +20,24 @@ impl Dshnext {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         // 交互链路取证：--e2e / 手动点击时用 RUST_LOG=dshnext=debug 看消息是否到达。
         // Tick 与 ToastTick 是高频的，排除掉免得把日志冲掉。
-        if !matches!(message, Message::Tick(_) | Message::ToastTick(_) | Message::WindowEvent(_)) {
+        if !matches!(
+            message,
+            Message::Tick(_) | Message::ToastTick(_) | Message::MigrateTick | Message::WindowEvent(_)
+        ) {
             log::debug!("msg {message:?}");
         }
+        let task = self.update_inner(message);
+        // --migrate-go：boot 闭包里发不出 Task（运行时还没接手，返回值被丢），
+        // 挂标记在这里补发第一次确认。
+        if self.boot_migrate {
+            self.boot_migrate = false;
+            let go = self.confirm_dirs_edit();
+            return Task::batch([task, go]);
+        }
+        task
+    }
+
+    fn update_inner(&mut self, message: Message) -> Task<Message> {
         match message {
             // ---------- 窗口 ----------
             Message::Opened(id) => {
@@ -406,6 +421,10 @@ impl Dshnext {
                 }
             }
             Message::MigrateDone(result) => self.migrate_done(result),
+            Message::MigrateTick => {
+                self.migrate_prog = crate::core::migrate::progress();
+                Task::none()
+            }
             Message::OpenDirsEdit => {
                 // 与首启引导互斥（正常情况引导早关了；防御一下）。
                 if self.onboarding.is_none() {
@@ -1268,6 +1287,8 @@ impl Dshnext {
             ),
         );
         self.busy = Some("正在转移目录…".into());
+        self.migrating = true;
+        self.migrate_prog = (0, 0);
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {
@@ -1284,6 +1305,8 @@ impl Dshnext {
     /// 非致命）——toast 概括、全文进控制台页。
     fn migrate_done(&mut self, result: Result<Vec<String>, String>) -> Task<Message> {
         self.busy = None;
+        self.migrating = false;
+        self.migrate_prog = (0, 0);
         if self.dirs_edit.take().is_some() {
             crate::app::DIRS_EDIT_OPEN.store(false, std::sync::atomic::Ordering::Relaxed);
             self.anim
@@ -1486,6 +1509,11 @@ impl Dshnext {
             subs.push(
                 iced::time::every(TOAST_TTL / 8).map(|_| Message::ToastTick(Instant::now())),
             );
+        }
+        if self.migrating {
+            // 目录转移进度心跳。复制是大批量小文件，120ms 刷新一次足够顺滑，
+            // 也不至于把 update 日志/重绘打爆。
+            subs.push(iced::time::every(Duration::from_millis(120)).map(|_| Message::MigrateTick));
         }
         // 环境光漂移的心跳（AmbientTick）已随背景冻结一起拆掉（2026-09-06）：
         // 用户看了几天说「反正也看不出来在动」，空闲零出帧纪律恢复。

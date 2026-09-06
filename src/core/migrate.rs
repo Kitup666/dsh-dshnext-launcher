@@ -16,7 +16,18 @@ use crate::core::envres;
 use crate::core::store;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+
+/// 复制进度（copy_tree 里逐项累加）。全局量：迁移同一时刻只有一个在跑
+/// （confirm_dirs_edit 的 busy 守卫），UI 用 MigrateTick 每 ~120ms 读一次。
+static COPIED: AtomicU64 = AtomicU64::new(0);
+static TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// (已复制项数, 总项数)。total=0 = 没有迁移在跑或还没数完。
+pub fn progress() -> (u64, u64) {
+    (COPIED.load(Ordering::Relaxed), TOTAL.load(Ordering::Relaxed))
+}
 
 /// 一次性完成「改启动器目录 + 改 dsh-home」的落盘部分（阻塞线程里跑）。
 /// 返回 warnings：删除阶段没删掉的旧文件（数据已双份，属非致命）。
@@ -33,6 +44,24 @@ pub fn relocate(
     let old_home = envres::home_dir();
     let launcher_moved = launcher_new != old_data;
     let mut warnings: Vec<String> = Vec::new();
+
+    // ---- 0. 预计数：先数总量再复制，进度条才有分母。只数非目录条目
+    //      （文件 + 链接），和复制阶段的累加口径一致。
+    COPIED.store(0, Ordering::Relaxed);
+    let mut total = if launcher_moved {
+        count_entries(&old_data, &[launcher_new.clone()])
+    } else {
+        0
+    };
+    let home_follows = launcher_moved
+        && old_home
+            .strip_prefix(&old_data)
+            .map(|rel| home_new == launcher_new.join(rel))
+            .unwrap_or(false);
+    if home_new != old_home && !home_follows {
+        total += count_entries(&old_home, &[]);
+    }
+    TOTAL.store(total, Ordering::Relaxed);
 
     // ---- 1. 启动器数据目录：先复制，全成才改道 ----
     if launcher_moved {
@@ -57,12 +86,7 @@ pub fn relocate(
     //      （默认 `<数据>/home`），清场顺序不对会把自己要复制的源删掉。
     //      home 在数据目录内且目标就是它的新家时，内容已随数据复制到位，跳过。
     if home_new != old_home {
-        let already_moved = launcher_moved
-            && old_home
-                .strip_prefix(&old_data)
-                .map(|rel| home_new == launcher_new.join(rel))
-                .unwrap_or(false);
-        if !already_moved && old_home.exists() {
+        if !home_follows && old_home.exists() {
             let remap = launcher_moved.then(|| (old_data.as_path(), launcher_new.as_path()));
             let errs = copy_tree(&old_home, &home_new, &[], remap);
             if !errs.is_empty() {
@@ -89,6 +113,7 @@ pub fn relocate(
         let old_cfg = old_data.join("config.json");
         if old_cfg.exists() {
             copy_file_retry(&old_cfg, &launcher_new.join("config.json"))?;
+            COPIED.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -162,14 +187,44 @@ fn copy_tree(
         if is_link {
             if let Err(e) = recreate_link(&from, &to, remap) {
                 errs.push(e);
+            } else {
+                COPIED.fetch_add(1, Ordering::Relaxed);
             }
         } else if from.is_dir() {
             errs.extend(copy_tree(&from, &to, &[], remap));
         } else if let Err(e) = copy_file_retry(&from, &to) {
             errs.push(e);
+        } else {
+            COPIED.fetch_add(1, Ordering::Relaxed);
         }
     }
     errs
+}
+
+/// 数 `src` 下非目录条目（文件 + 链接）总量，给进度条当分母。`skip` 与
+/// copy_tree 同口径。
+fn count_entries(src: &Path, skip: &[PathBuf]) -> u64 {
+    let mut n = 0;
+    let Ok(entries) = fs::read_dir(src) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let from = entry.path();
+        if skip.contains(&from) {
+            continue;
+        }
+        let is_link = fs::symlink_metadata(&from)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_link {
+            n += 1;
+        } else if from.is_dir() {
+            n += count_entries(&from, &[]);
+        } else {
+            n += 1;
+        }
+    }
+    n
 }
 
 /// 在 `to` 处重建 `from` 的 junction/symlink，目标经 `remap` 前缀改写。

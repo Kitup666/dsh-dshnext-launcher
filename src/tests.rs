@@ -539,6 +539,11 @@ fn dirs_edit_migrates_everything() {
 
     let warnings = crate::core::migrate::relocate(launcher.clone(), home.clone(), true).unwrap();
     assert!(warnings.is_empty(), "不应有残留警告：{warnings:?}");
+    // 进度口径：预计数 > 0，复制完拷贝数 ≥ 总数（并行测试可能往共享数据目录
+    // 补文件——没被预计数、但被复制，UI 端对 >100% 有钳制）。
+    let (copied, total) = crate::core::migrate::progress();
+    assert!(total > 0, "预计数应数到条目");
+    assert!(copied >= total, "复制完成的进度应到 100%：{copied}/{total}");
 
     assert_eq!(crate::core::store::data_dir(), launcher, "会话内应已改道");
     assert!(launcher.join("probe.txt").exists(), "散文件应搬走");

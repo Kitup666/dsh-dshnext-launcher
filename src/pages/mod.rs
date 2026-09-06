@@ -211,6 +211,8 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             &ob.home_hint,
             pal,
             &app.anim,
+            app.migrating,
+            app.migrate_prog,
         );
     }
     // 设置页「修改目录」：同一浮层的编辑模式（可取消、确认会转移文件）。
@@ -222,6 +224,8 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             &ob.home_hint,
             pal,
             &app.anim,
+            app.migrating,
+            app.migrate_prog,
         );
     }
 

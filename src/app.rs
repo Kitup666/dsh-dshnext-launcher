@@ -146,6 +146,9 @@ pub struct Dshnext {
     /// 存在的理由是**动画取证**：`--shot --after` 截的永远是落定态，配上这个才能
     /// 把快门卡在过渡中间（`--switch-at` 与 `--after` 差多少，就截到第几毫秒）。
     pub switch: Option<(Page, u64)>,
+    /// `--migrate-go`：boot 闭包发不出 Task（运行时未接手），标记后在第一次
+    /// update 里补发 ObConfirm 的转移任务。
+    pub boot_migrate: bool,
     pub autotest: bool,
     pub e2e: bool,
     pub maximized: bool,
@@ -176,6 +179,12 @@ pub struct Dshnext {
     /// 设置页「修改目录」表单（与 onboarding 共用浮层与 Ob* 消息；
     /// 两者不会同时开着——Ob* 的路由是 dirs_edit 优先）。
     pub dirs_edit: Option<Onboarding>,
+    /// 目录转移进行中（confirm_dirs_edit 到 MigrateDone 之间）。挂 MigrateTick
+    /// 心跳订阅、浮层显示进度条并禁用按钮。
+    pub migrating: bool,
+    /// 最近一次读到的复制进度（MigrateTick 从 core::migrate::progress() 抄来；
+    /// 存字段是为了 view 有值可画）。
+    pub migrate_prog: (u64, u64),
     pub toasts: Vec<Toast>,
 
     // ---- 后端数据 ----
@@ -286,6 +295,8 @@ pub enum Message {
     ObClose,
     /// 目录转移结束：Ok 里是删除阶段没删掉的旧文件清单（非致命）。
     MigrateDone(Result<Vec<String>, String>),
+    /// 转移进行中的心跳（~120ms 一次）：从 core::migrate 抄进度给 view 画。
+    MigrateTick,
     ToastTick(Instant),
     Notify(ToastKind, String),
     /// 什么都不做。给「按钮在位但当前无动作」的场合用。
@@ -408,6 +419,9 @@ impl Dshnext {
             draft: String::new(),
             onboarding,
             dirs_edit: None,
+            migrating: false,
+            migrate_prog: (0, 0),
+            boot_migrate: false,
             toasts: Vec::new(),
 
             port_text: config.port.to_string(),

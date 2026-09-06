@@ -57,6 +57,8 @@ fn main() -> iced::Result {
     let force_onboarding = flag("--onboarding");
     // --dirs-edit：直接开在设置页「修改目录」表单上（编辑模式），出图用。
     let force_dirs_edit = flag("--dirs-edit");
+    // --migrate-go <目标目录>：开窗即确认转移（进度条出图用）。
+    let migrate_go = opt("--migrate-go");
     // --migrate-to <目录> [--dsh-home <目录>]：开窗前执行目录转移（两阶段，
     // 见 core::migrate）。修复现场 / 迁移验证用；完成后正常进界面。
     if let Some(dest) = opt("--migrate-to") {
@@ -175,6 +177,16 @@ fn main() -> iced::Result {
             if force_dirs_edit {
                 app.dirs_edit = Some(app::Onboarding::for_edit(&app.config.dsh_home));
                 crate::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            // --migrate-go <目标目录>：开在「转移进行中」的表单上（自动填目标，
+            // 第一次 update 补发确认）。给进度条出图用——实际迁移要用
+            // DSHDESK_DATA_DIR 隔离。
+            if let Some(dest) = &migrate_go {
+                let mut ob = app::Onboarding::for_edit(&app.config.dsh_home);
+                ob.launcher_dir = dest.clone();
+                app.dirs_edit = Some(ob);
+                crate::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+                app.boot_migrate = true;
             }
             app
         },

@@ -20,7 +20,8 @@ use iced::{Alignment, Border, Element, Fill, Padding, Shadow, Theme};
 
 /// 把目录表单叠在页面之上。`t` 是淡入补间值（0→1）。首启引导不可关闭；
 /// 编辑模式（first_run=false）有取消按钮、点遮罩可退场，确认文案换成
-/// 「保存并转移」。
+/// 「保存并转移」。`migrating` = 文件转移在跑：按钮全禁、显示进度条
+/// （MigrateTick 心跳推进）。
 #[allow(clippy::too_many_arguments)]
 pub fn overlay<'a>(
     base: Element<'a, Message>,
@@ -29,6 +30,8 @@ pub fn overlay<'a>(
     home_default: &'a str,
     pal: &'static Palette,
     anim: &AnimState,
+    migrating: bool,
+    prog: (u64, u64),
 ) -> Element<'a, Message> {
     let t = anim.value("modal").max(0.0).min(1.0);
     let edit_mode = !ob.first_run;
@@ -99,7 +102,7 @@ pub fn overlay<'a>(
             launcher_default,
             PickField::LauncherDir,
             "ob.browse.launcher",
-            ob.picking == Some(PickField::LauncherDir),
+            ob.picking == Some(PickField::LauncherDir) || migrating,
         ),
         dir_field(
             "dsh-home（DSH_HOME）",
@@ -108,22 +111,72 @@ pub fn overlay<'a>(
             home_default,
             PickField::DshHome,
             "ob.browse.home",
-            ob.picking == Some(PickField::DshHome),
+            ob.picking == Some(PickField::DshHome) || migrating,
         ),
         space::vertical().height(6.0),
         txt(footnote).size(FS_TINY).color(pal.text_3),
+        // 转移进行中：进度条换成脚注的位置（分母 = 预计数的文件/链接总量）。
+        migrating
+            .then(|| -> Element<'a, Message> {
+                let (done, total) = prog;
+            let frac = if total > 0 {
+                (done as f32 / total as f32).min(1.0)
+            } else {
+                0.0
+            };
+            // 面板宽 560 - 左右 padding 28×2 = 504 的内容列。
+            let bar = stack![
+                container(space::horizontal().height(4.0))
+                    .width(Fill)
+                    .style(move |_theme: &Theme| container::Style {
+                        text_color: None,
+                        // surface_2 在浅色面板（白）上贴不出轨道感，用 surface_3
+                        // + border_mid 描一圈，深浅两主题都可见。
+                        background: Some(pal.surface_3.into()),
+                        border: Border {
+                            color: pal.border_mid,
+                            width: 0.6,
+                            radius: 2.0.into(),
+                        },
+                        shadow: Shadow::default(),
+                        snap: true,
+                    }),
+                container(space::horizontal().height(4.0))
+                    .width((504.0 * frac).max(if total > 0 { 4.0 } else { 0.0 }))
+                    .style(move |_theme: &Theme| container::Style {
+                        text_color: None,
+                        background: Some(pal.accent_hi.into()),
+                        border: Border::default(),
+                        shadow: Shadow::default(),
+                        snap: true,
+                    }),
+            ];
+            column![
+                bar,
+                txt(if total > 0 {
+                    format!("正在转移文件… {} / {} 项", done, total)
+                } else {
+                    "正在统计要转移的文件…".to_string()
+                })
+                .size(FS_TINY)
+                .color(pal.text_3),
+            ]
+            .spacing(6)
+            .into()
+        })
+        .unwrap_or_else(|| space::vertical().height(0.0).into()),
         row![
             space::horizontal(),
             button::btn(
                 Spec::new("ob.defaults", "使用默认路径", Variant::Ghost).size(BtnSize::Small),
                 pal,
                 anim,
-                Some(Message::ObDefaults),
+                (!migrating).then_some(Message::ObDefaults),
                 Some(Message::HoverEnter("ob.defaults")),
                 Some(Message::HoverExit("ob.defaults")),
             ),
             // 编辑模式才有退路；首启引导必须被回答。
-            edit_mode.then(|| {
+            (edit_mode && !migrating).then(|| {
                 button::btn(
                     Spec::new("ob.cancel", "取消", Variant::Secondary).size(BtnSize::Small),
                     pal,
@@ -134,10 +187,14 @@ pub fn overlay<'a>(
                 )
             }),
             button::btn(
-                Spec::new("ob.confirm", confirm_label, Variant::Primary),
+                Spec::new(
+                    "ob.confirm",
+                    if migrating { "正在转移…" } else { confirm_label },
+                    Variant::Primary
+                ),
                 pal,
                 anim,
-                Some(Message::ObConfirm),
+                (!migrating).then_some(Message::ObConfirm),
                 Some(Message::HoverEnter("ob.confirm")),
                 Some(Message::HoverExit("ob.confirm")),
             ),
@@ -175,7 +232,7 @@ pub fn overlay<'a>(
             shadow: Shadow::default(),
             snap: true,
         });
-    let mask: Element<'a, Message> = if edit_mode {
+    let mask: Element<'a, Message> = if edit_mode && !migrating {
         iced::widget::mouse_area(mask).on_press(Message::ObClose).into()
     } else {
         mask.into()
