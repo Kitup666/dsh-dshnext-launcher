@@ -105,7 +105,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         container(page_body)
             .width(Fill)
             .height(Fill)
-            .padding(Padding::from(44).top(44))
+            .padding(Padding::from(44).top(12))
             .into()
     } else {
         // 滚动页叠顶/底虚化帏幕：内容滚过主区上下边时渐隐进背景（帏幕 =
@@ -116,15 +116,17 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
                 container(page_body)
                     .width(Fill)
                     .height(Fill)
-                    .padding(Padding::from(44).top(44)),
+                    .padding(Padding::from(44).top(12)),
             )
             .direction(scrollable::Direction::Vertical(widgets::slim_scrollbar()))
             .style(widgets::slim_scroll_style(pal))
             .width(Fill)
             .height(Fill),
-            // 顶帏窄于顶 padding：稍滚一点标题不该整个被吃掉，14px 只柔化
-            // 贴边瞬间；底帏对齐底 padding 44。
-            fade_veil(pal, 14.0, true),
+            // 顶帏窄于顶 padding（8 < 12）：稍滚一点标题不该整个被吃掉；
+            // 静止时帏幕只罩住 padding 空白。底帏对齐底 padding 44。
+            // 顶 padding 12 是平衡值：标题条 40 + 12 = 52，对齐底部 44
+            // （2026-09-06 用户反馈上下不平衡，内容整体上移）。
+            fade_veil(pal, 8.0, true),
             fade_veil(pal, 44.0, false),
         ]
         .width(Fill)

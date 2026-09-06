@@ -180,22 +180,30 @@ iced 侧用 `Subscription::run` 把 channel 接收端变成消息流，事件直
 
 iced 是 Elm 架构：`State → view() → Element → 用户操作 → Message → update() → 新 State`。天然契合「状态变化才重绘」。
 
+**现状架构快照（组件清单、分层依赖方向、关键链路）维护在 [docs/architecture/current-state.md](docs/architecture/current-state.md)——架构改动后更新那份，本节只留目录总览。**
+
 ```
 仓库根（原 Dshnext/，第一代删除后提升为根）
-├── DESIGN.md
-├── Cargo.toml
-├── build.rs                    # 嵌入图标与清单（DPI-aware、无控制台）
-├── assets/
-│   ├── icons/                  # app.ico/master.png/window-64.rgba：应用图标（tools/make-icon.py 生成）；*.svg：界面图标
-│   └── fonts/                  # 内嵌字体，见 §6
+├── DESIGN.md                   # 设计决策与阶段日志（本文档）
+├── HANDOFF.md                  # 上下文交接：可调参数表、shader 约定
+├── AGENTS.md                   # 踩坑纪律（给接手的 agent）
 ├── docs/
+│   ├── architecture/current-state.md   # 现状架构快照（活的架构地图）
 │   ├── commands.rs.tauri-reference
 │   └── Cargo.toml.tauri-reference
+├── assets/
+│   ├── icons/                  # app.ico/master.png/window-64.rgba：应用图标；*.svg：界面图标
+│   └── fonts/                  # 内嵌字体，见 §6
+├── phase0/                     # 探针工程（保留不删），性能数字唯一复现处
+├── packaging/                  # NSIS 安装包
 └── src/
-    ├── main.rs                 # iced::application 入口、窗口设置
-    ├── app.rs                  # 顶层 State / Message / update / view / subscription
-    ├── theme.rs                # 设计令牌（两套主题），见 §6
-    ├── core/                   # ← 复用的后端，仅解耦不改逻辑
+    ├── main.rs                 # 入口：CLI、窗口设置、DX12 限定、字体注入
+    ├── app.rs                  # 顶层 State / Message / helper（update/view 已拆出）
+    ├── update.rs               # 全部 update / subscription（阶段 3 从 app.rs 拆出）
+    ├── bridge.rs               # core↔iced 桥：channel 两端与 ProcMap 的全局持有
+    ├── tests.rs                # iced_test 14 例
+    ├── theme.rs                # 设计令牌（两套主题 + 字号/间距/圆角常量），见 §6
+    ├── core/                   # ← 复用的后端（1255 行），仅解耦不改逻辑，零上层依赖
     │   ├── mod.rs
     │   ├── event.rs            # 新增：CoreEvent / EventSink
     │   ├── store.rs
@@ -204,24 +212,28 @@ iced 是 Elm 架构：`State → view() → Element → 用户操作 → Message
     │   ├── installs.rs
     │   ├── procman.rs
     │   └── plugins.rs
-    ├── pages/                  # 六个页面，与上一代一一对应
+    ├── pages/                  # 六页 + 共享外壳（shell/侧边栏/环境光/帏幕都在 mod.rs）
+    │   ├── mod.rs
     │   ├── home.rs
     │   ├── profiles.rs
     │   ├── plugins.rs
     │   ├── env.rs
     │   ├── console.rs
     │   └── settings.rs
-    └── ui/                     # 自造的通用组件，见 §7
+    └── ui/                     # 自造组件 + 渲染管线，见 §7
+        ├── mod.rs              # 文本纪律入口：txt/txt_bold/mono（唯一文本通道）
         ├── card.rs
         ├── button.rs
-        ├── sidebar.rs
-        ├── list_row.rs
-        ├── modal.rs            # 自造（iced 无 modal）
-        ├── toast.rs
-        ├── tag.rs
-        ├── segmented.rs
+        ├── widgets.rs          # 通用控件收编处（tag/list_row/input/dropdown/segmented/toast/…）
         ├── icon.rs             # 描边图标，见 §6
-        └── anim.rs             # 过渡动画驱动，见 §7
+        ├── anim.rs             # 过渡动画驱动，见 §7.1
+        ├── modal.rs            # 自造（iced 无 modal），见 §7.2
+        ├── reveal.rs           # 切页入场位移，见 §7.7
+        ├── titlebar.rs         # 无边框窗口三件套（细条 40 + 品牌单元 64 + 缩放热区），见 §7.6
+        ├── frosted.rs          # 假高斯模糊玻璃卡（布局跟随内容的自定义 widget）
+        ├── glass_pipeline.rs   # 自定义 wgpu primitive 管线（背景场/玻璃卡/渐隐帏幕三模式）
+        ├── glass.wgsl          # 上述管线的 fragment shader
+        └── glow_mesh.rs        # 光球参数唯一来源 + tiny-skia 回退的 Mesh 扇形
 ```
 
 顶层状态形状（对照上一代 `App.tsx` 的 shared props）：

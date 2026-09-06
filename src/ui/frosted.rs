@@ -28,10 +28,13 @@ use iced::{Background, Border, Color, Element, Gradient, Length, Padding, Point,
 // 平移（容器链默认不裁剪 viewport，reveal 也原样透传），draw 时直接反推。
 // 切页、滚动钳制、改布局都天然自洽，不会出现全局状态与 widget 状态脱节。
 //
-// 主滚动区的窗口原点（逻辑 px）：侧边栏 232 + 1px 分隔线，标题栏 TITLEBAR_H。
-// 标题栏是**通栏**（横跨整窗、品牌块在其左端），侧边栏和内容区都在它下面。
-// 高度引用 titlebar::TITLEBAR_H 常量，不再双处硬编码。
-const MAIN_ORIGIN: (f32, f32) = (233.0, crate::ui::titlebar::TITLEBAR_H);
+// 主滚动区的窗口原点（逻辑 px）：侧边栏 SIDEBAR_W + 1px 分隔线，标题栏 TITLEBAR_H。
+// 细标题栏（TITLEBAR_H=40）只盖主区上方，侧边栏（含独立品牌头部单元）在它左边。
+// 两维都引用 titlebar 常量，改布局尺寸这里自动跟随，不双处硬编码。
+const MAIN_ORIGIN: (f32, f32) = (
+    crate::ui::titlebar::SIDEBAR_W + 1.0,
+    crate::ui::titlebar::TITLEBAR_H,
+);
 
 // 颗粒场：GRAIN_ROWS×GRAIN_COLS 张瓦片铺窗口逻辑坐标，瓦片 1:1 贴逻辑像素。
 // 2048×1376 覆盖本机最大窗口（2560×1600 物理 @125% = 2048×1280 逻辑）。

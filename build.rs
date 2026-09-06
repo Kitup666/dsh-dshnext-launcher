@@ -3,6 +3,10 @@
 // 注意 winresource 会写默认 manifest，这里显式给一个不含 DPI 声明的最小
 // manifest——DPI 感知由 winit 运行时自己设（per-monitor v2），别在这里抢。
 fn main() {
+    // 显式声明依赖，别用「盯整个包」的默认行为：默认下改任何文件（包括
+    // HANDOFF.md 这类文档）都触发 build.rs 重跑 + 全量重编。exe 图标在这里
+    // 烧进资源段，assets 必须显式在跟踪范围内。
+    println!("cargo:rerun-if-changed=assets");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/icons/app.ico");

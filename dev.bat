@@ -39,6 +39,22 @@ goto :collect
 
 :launch
 taskkill /F /IM dshnext.exe >nul 2>&1
-echo [dev] cargo run %PROFILE% --%APPARGS%
+rem After taskkill, Windows needs a moment to release the exe file lock.
+rem Cargo build right away can hit os error 5 (access denied); in a
+rem double-click scenario the console flashes and it LOOKS like "no rebuild".
+ping -n 2 127.0.0.1 >nul
+rem Build and run are SPLIT on purpose: a double-clicked console closes
+rem instantly when cargo run fails, hiding the compile error. Build first,
+rem pause on failure so it can be read; then launch (build step is a no-op).
+rem Pausing on the app's own exit code would be wrong: taskkill-terminated
+rem dshnext exits 1, which is not a build failure.
+echo [dev] building %PROFILE% ...
+cargo build %PROFILE%
+if errorlevel 1 (
+    echo [dev] build FAILED - see errors above
+    pause
+    exit /b 1
+)
+echo [dev] launching dshnext %APPARGS%
 cargo run %PROFILE% --%APPARGS%
 exit /b %ERRORLEVEL%
