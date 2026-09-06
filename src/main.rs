@@ -51,12 +51,35 @@ fn main() -> iced::Result {
     // 落盘从不回读（重启后永远回到默认）——这次修掉。
     // 路径解析必须先于 config 读取：pointer 文件决定 config 去哪找。
     let data_dir = crate::core::store::init_data_dir();
-    let cfg = crate::core::store::load();
+    let mut cfg = crate::core::store::load();
     crate::core::envres::init_home_from_config(&cfg.dsh_home);
     // 首次启动（config.json 不存在）会弹目录引导；--onboarding 强制弹出供出图。
     let force_onboarding = flag("--onboarding");
     // --dirs-edit：直接开在设置页「修改目录」表单上（编辑模式），出图用。
     let force_dirs_edit = flag("--dirs-edit");
+    // --migrate-to <目录> [--dsh-home <目录>]：开窗前执行目录转移（两阶段，
+    // 见 core::migrate）。修复现场 / 迁移验证用；完成后正常进界面。
+    if let Some(dest) = opt("--migrate-to") {
+        let dest = std::path::absolute(&dest).unwrap_or_else(|_| dest.into());
+        let custom = !cfg.dsh_home.trim().is_empty();
+        let home = match opt("--dsh-home") {
+            Some(h) => std::path::absolute(&h).unwrap_or_else(|_| h.into()),
+            None if custom => std::path::PathBuf::from(cfg.dsh_home.trim()),
+            None => dest.join("home"),
+        };
+        log::info!(
+            "migrate-to {} (dsh-home {})",
+            dest.display(),
+            home.display()
+        );
+        match crate::core::migrate::relocate(dest, home, custom) {
+            Ok(w) if w.is_empty() => log::info!("migrate done"),
+            Ok(w) => log::info!("migrate done, {} 项留在旧位置：{w:?}", w.len()),
+            Err(e) => log::error!("migrate FAILED: {e}"),
+        }
+        // 迁移改道了数据目录：重读 config，窗口几何/主题按新位置的来。
+        cfg = crate::core::store::load();
+    }
     let resolve = |s: &str| match s {
         "light" => Mode::Light,
         "system" if crate::core::platform::system_prefers_light() => Mode::Light,

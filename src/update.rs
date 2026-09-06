@@ -405,6 +405,7 @@ impl Dshnext {
                     self.confirm_onboarding()
                 }
             }
+            Message::MigrateDone(result) => self.migrate_done(result),
             Message::OpenDirsEdit => {
                 // 与首启引导互斥（正常情况引导早关了；防御一下）。
                 if self.onboarding.is_none() {
@@ -581,17 +582,6 @@ impl Dshnext {
                 match result {
                     Ok(()) => {
                         self.notify(ToastKind::Ok, format!("{what}完成"));
-                        // 目录转移走这条回调收尾：关掉编辑表单。
-                        if self.dirs_edit.take().is_some() {
-                            crate::app::DIRS_EDIT_OPEN
-                                .store(false, std::sync::atomic::Ordering::Relaxed);
-                            self.anim.animate_to(
-                                "modal",
-                                0.0,
-                                Duration::from_millis(150),
-                                Instant::now(),
-                            );
-                        }
                         // 装完立刻重新探测，界面上的版本号才会变。
                         Task::batch([
                             Task::done(Message::RefreshEnv),
@@ -1286,8 +1276,44 @@ impl Dshnext {
                 .await
                 .unwrap_or_else(|e| Err(e.to_string()))
             },
-            |r| Message::OpDone("目录转移", r),
+            |r| Message::MigrateDone(r),
         )
+    }
+
+    /// 目录转移收尾。Ok 的参数是删除阶段没删掉的旧文件（数据已双份，
+    /// 非致命）——toast 概括、全文进控制台页。
+    fn migrate_done(&mut self, result: Result<Vec<String>, String>) -> Task<Message> {
+        self.busy = None;
+        if self.dirs_edit.take().is_some() {
+            crate::app::DIRS_EDIT_OPEN.store(false, std::sync::atomic::Ordering::Relaxed);
+            self.anim
+                .animate_to("modal", 0.0, Duration::from_millis(150), Instant::now());
+        }
+        match result {
+            Ok(w) if w.is_empty() => {
+                self.notify(ToastKind::Ok, "目录转移完成");
+            }
+            Ok(w) => {
+                for line in &w {
+                    self.sys_log("env", format!("旧位置残留：{line}"));
+                }
+                self.notify(
+                    ToastKind::Warn,
+                    format!("目录转移完成，{} 项留在旧位置（详情见控制台）", w.len()),
+                );
+            }
+            Err(e) => {
+                // 失败原因必须可追溯：toast 只活 4 秒，全文进控制台页。
+                self.sys_log("env", format!("目录转移失败：{e}"));
+                self.notify(ToastKind::Err, format!("目录转移失败：{e}"));
+            }
+        }
+        // 成功失败都要重探：成功是路径全变了，失败也可能是改道后的半程状态。
+        Task::batch([
+            Task::done(Message::RefreshEnv),
+            Task::done(Message::RefreshProfiles),
+            Task::done(Message::ScanOffline),
+        ])
     }
 
     fn on_core_event(&mut self, event: CoreEvent) -> Task<Message> {

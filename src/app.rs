@@ -284,6 +284,8 @@ pub enum Message {
     OpenDirsEdit,
     /// 编辑模式的取消（首启引导没有这个出口）。
     ObClose,
+    /// 目录转移结束：Ok 里是删除阶段没删掉的旧文件清单（非致命）。
+    MigrateDone(Result<Vec<String>, String>),
     ToastTick(Instant),
     Notify(ToastKind, String),
     /// 什么都不做。给「按钮在位但当前无动作」的场合用。

@@ -537,12 +537,14 @@ fn dirs_edit_migrates_everything() {
     let launcher = root.join("newdata");
     let home = root.join("newhome");
 
-    crate::core::migrate::relocate(launcher.clone(), home.clone(), true).unwrap();
+    let warnings = crate::core::migrate::relocate(launcher.clone(), home.clone(), true).unwrap();
+    assert!(warnings.is_empty(), "不应有残留警告：{warnings:?}");
 
     assert_eq!(crate::core::store::data_dir(), launcher, "会话内应已改道");
     assert!(launcher.join("probe.txt").exists(), "散文件应搬走");
     assert!(!boot.join("probe.txt").exists(), "旧位置不应残留");
     assert!(home.join("profiles").join("p.txt").exists(), "home 内容应搬走");
+    assert!(!boot.join("home").exists(), "旧 home 应清场");
     assert!(
         launcher.join("config.json").exists(),
         "config.json 应最后搬到新目录"
@@ -558,6 +560,47 @@ fn dirs_edit_migrates_everything() {
     assert_eq!(crate::core::envres::home_dir(), home, "会话内 home 覆盖生效");
 
     // 清场：路径全局拨回锚定目录，home 覆盖也拨回去
+    restore_default_data_dir();
+    crate::core::envres::set_home_dir(boot.join("home"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+#[cfg(windows)]
+fn migrate_rewrites_junction_targets() {
+    // 实测翻车点：npm 依赖树里的 junction 指向数据目录内的 runtime，
+    // fs::copy 直接「拒绝访问」。迁移后链接必须在重建时改写目标前缀。
+    let _g = OB_LOCK.lock().unwrap();
+    let boot = crate::core::store::boot_dir();
+    restore_default_data_dir();
+
+    // 数据目录里放 runtime/real.txt，home/profiles/dep 是指向它的 junction。
+    std::fs::create_dir_all(boot.join("runtime"));
+    std::fs::write(boot.join("runtime").join("real.txt"), b"z").unwrap();
+    let dep = boot.join("home").join("profiles").join("dep");
+    std::fs::create_dir_all(dep.parent().unwrap()).unwrap();
+    junction::create(boot.join("runtime"), &dep).unwrap();
+
+    let root = std::env::temp_dir().join("dshnext-tests-junction");
+    let _ = std::fs::remove_dir_all(&root);
+    let launcher = root.join("newdata");
+    let home = root.join("newhome");
+
+    let warnings = crate::core::migrate::relocate(launcher.clone(), home.clone(), true).unwrap();
+    assert!(warnings.is_empty(), "不应有残留警告：{warnings:?}");
+
+    // 新位置的链接可走、目标已改写到新数据目录
+    let new_dep = home.join("profiles").join("dep");
+    assert!(new_dep.join("real.txt").exists(), "经 junction 应能读到内容");
+    let target = std::fs::read_link(&new_dep).expect("新位置应是链接而非实体目录");
+    assert!(
+        target.starts_with(&launcher),
+        "junction 目标应改写为新数据目录：{target:?}"
+    );
+    // 旧位置整体清场（junction 也被摘掉）
+    assert!(!boot.join("home").exists(), "旧 home 应清场");
+    assert!(!boot.join("runtime").exists(), "旧 runtime 应清场");
+
     restore_default_data_dir();
     crate::core::envres::set_home_dir(boot.join("home"));
     let _ = std::fs::remove_dir_all(&root);
