@@ -63,9 +63,23 @@ fn frosted<'a, Message: 'static>(
 /// 同参光球承担，真半透明底下没东西可透只剩噪声（2026-09-06 教训）。
 /// 底色带 160° sheen 渐变（左上混 4% 白 → 落回本色）：光打在玻璃上的
 /// 高光，玻璃感的主要来源之一。+ 1px 白描边勾轮廓（借鉴 orevx）。
+///
+/// 颜色修正层（Apple/Fluent 的做法，zhihu p/657181578）：暗色毛玻璃在
+/// 模糊层之上还有一道 overlay 混合，恢复饱和度避免「死灰死灰的」。iced
+/// 没有混合模式，等价近似是把修正烤进底色：卡面向环境光的色相偏 6%、
+/// sheen 用冷白——卡面像是被同一片环境光照着，而不是中性灰盖在渐变上。
+const GLASS_HUE_BOT: Color = Color::from_rgb8(0x1e, 0x3a, 0x8a); // ambient_bot 色相
+const GLASS_HUE_TOP: Color = Color::from_rgb8(0x4f, 0x46, 0xe5); // ambient_top 色相
 fn surface_style(pal: &'static Palette, radius: f32, shadow: Shadow) -> container::Style {
-    let base = pal.surface_1;
-    let sheen = theme::lerp(base, Color::WHITE, 0.045);
+    let dark = pal.grain > 0.0;
+    let base = if dark {
+        theme::lerp(pal.surface_1, GLASS_HUE_BOT, 0.06)
+    } else {
+        pal.surface_1
+    };
+    // sheen 白里掺 10% 环境顶色相 → 冷白高光
+    let cool_white = theme::lerp(Color::WHITE, GLASS_HUE_TOP, 0.10);
+    let sheen = theme::lerp(base, cool_white, 0.045);
     container::Style {
         text_color: Some(pal.text),
         background: Some(iced::Background::Gradient(iced::Gradient::Linear(
