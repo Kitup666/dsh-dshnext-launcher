@@ -1,7 +1,7 @@
 //! `update` / `subscription`：所有状态迁移。与 view 分开是因为这文件本身就长，
 //! 混在一起找东西费劲。
 
-use crate::app::{Dshnext, Message, Mode, PluginTab, TOAST_TTL};
+use crate::app::{Dshnext, Message, Mode, Onboarding, PickField, PluginTab, TOAST_TTL};
 use crate::bridge;
 use crate::core::event::{CoreEvent, LogStream};
 use crate::pages::{self, Page};
@@ -44,6 +44,11 @@ impl Dshnext {
                 // 托盘要在主线程建（TrayIcon !Send），Opened 正是主线程 update。
                 if self.config.tray {
                     crate::tray::ensure();
+                }
+                // 首启引导的淡入（复用 "modal" 补间；同一时间只有一层浮层）。
+                if self.onboarding.is_some() {
+                    self.anim
+                        .animate_to("modal", 1.0, Duration::from_millis(220), Instant::now());
                 }
                 if self.autotest {
                     tasks.push(Task::done(Message::HoverEnter("nav.versions")));
@@ -335,6 +340,60 @@ impl Dshnext {
                 Task::none()
             }
             Message::DialogConfirm => self.confirm_dialog(),
+
+            // ---------- 首次启动目录引导 ----------
+            Message::ObEdit(f, v) => {
+                if let Some(ob) = &mut self.onboarding {
+                    match f {
+                        PickField::LauncherDir => {
+                            ob.launcher_dir = v;
+                            ob.home_hint = Onboarding::home_hint_for(&ob.launcher_dir);
+                        }
+                        PickField::DshHome => ob.dsh_home = v,
+                    }
+                }
+                Task::none()
+            }
+            Message::ObBrowse(f) => {
+                if let Some(ob) = &mut self.onboarding {
+                    ob.picking = Some(f);
+                }
+                // rfd 的 IFileDialog 在阻塞线程上跑（COM 初始化由它自己管），
+                // 不堵 iced 的主线程。
+                Task::perform(
+                    tokio::task::spawn_blocking(move || {
+                        rfd::FileDialog::new()
+                            .set_title("选择目录")
+                            .pick_folder()
+                            .map(|p| p.to_string_lossy().into_owned())
+                    }),
+                    move |res| Message::ObPicked(f, res.unwrap_or(None)),
+                )
+            }
+            Message::ObPicked(f, path) => {
+                if let Some(ob) = &mut self.onboarding {
+                    ob.picking = None;
+                    if let Some(p) = path {
+                        match f {
+                            PickField::LauncherDir => {
+                                ob.launcher_dir = p;
+                                ob.home_hint = Onboarding::home_hint_for(&ob.launcher_dir);
+                            }
+                            PickField::DshHome => ob.dsh_home = p,
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::ObDefaults => {
+                if let Some(ob) = &mut self.onboarding {
+                    ob.launcher_dir.clear();
+                    ob.dsh_home.clear();
+                    ob.home_hint = Onboarding::home_hint_for("");
+                }
+                Task::none()
+            }
+            Message::ObConfirm => self.confirm_onboarding(),
             Message::ToastTick(now) => {
                 self.toasts.retain(|t| t.until > now);
                 Task::none()
@@ -1073,6 +1132,67 @@ impl Dshnext {
                     },
                     |r| Message::OpDone("卸载 dsh", r),
                 )
+            }
+        }
+    }
+
+    /// 首次启动引导「开始使用」：建目录 → 改道 → pointer → 落盘 → 重新探测。
+    /// 失败时引导留着（toast 报错），用户改路径重试。
+    fn confirm_onboarding(&mut self) -> Task<Message> {
+        let Some(ob) = &self.onboarding else {
+            return Task::none();
+        };
+        let launcher = if ob.launcher_dir.trim().is_empty() {
+            crate::core::store::boot_dir()
+        } else {
+            std::path::PathBuf::from(ob.launcher_dir.trim())
+        };
+        // 默认 dsh-home 跟着（可能已改道的）启动器目录走：<launcher>/home。
+        let custom_home = !ob.dsh_home.trim().is_empty();
+        let home = if custom_home {
+            std::path::PathBuf::from(ob.dsh_home.trim())
+        } else {
+            launcher.join("home")
+        };
+
+        let applied = (|| -> Result<(), String> {
+            // 手输的可能是相对路径：先转绝对（不碰 \\?\ verbatim 前缀，
+            // 那个在环境页/配置里看着像乱码）。
+            let launcher = std::path::absolute(&launcher).unwrap_or(launcher);
+            let home = std::path::absolute(&home).unwrap_or(home);
+            std::fs::create_dir_all(&launcher)
+                .map_err(|e| format!("创建启动器目录失败：{e}"))?;
+            std::fs::create_dir_all(&home).map_err(|e| format!("创建 dsh-home 失败：{e}"))?;
+            crate::core::store::redirect_data_dir(launcher.clone());
+            crate::core::envres::set_home_dir(home.clone());
+            crate::core::store::write_pointer(&launcher)?;
+            let mut cfg = self.config.clone();
+            // 默认存空串——将来数据目录再搬家，空串仍解析到新的默认位置；
+            // 自定义路径存绝对路径，搬家不受影响。
+            cfg.dsh_home = if custom_home {
+                home.to_string_lossy().into_owned()
+            } else {
+                String::new()
+            };
+            crate::core::store::save(&cfg)?;
+            self.config = cfg.clone();
+            self.cfg_draft = cfg;
+            Ok(())
+        })();
+
+        match applied {
+            Ok(()) => {
+                self.onboarding = None;
+                self.notify(ToastKind::Ok, "目录已就绪，可以开始使用了");
+                Task::batch(vec![
+                    Task::done(Message::RefreshEnv),
+                    Task::done(Message::RefreshProfiles),
+                    Task::done(Message::ScanOffline),
+                ])
+            }
+            Err(e) => {
+                self.notify(ToastKind::Err, e);
+                Task::none()
             }
         }
     }

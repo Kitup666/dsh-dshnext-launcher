@@ -11,7 +11,7 @@
 // update 返回的 Task 在测试里本就该丢弃（不驱动运行时），逐条 `let _ =` 太吵。
 #![allow(unused_must_use)]
 
-use crate::app::{Dshnext, Message, Mode, PluginTab};
+use crate::app::{Dshnext, Message, Mode, Onboarding, PickField, PluginTab};
 use crate::core::envres::EnvStatus;
 use crate::core::event::{CoreEvent, LogStream};
 use crate::core::plugins::PluginInfo;
@@ -431,4 +431,87 @@ fn running_instance_shows_stop() {
         "Stop(demo)",
     );
     drop(a.update(msg));
+}
+
+// ------------------------------------------------ 首次启动目录引导
+
+// 引导确认会改进程级全局（DATA_DIR / pointer / 磁盘），两个用例必须串行，
+// 结束时把全局拨回测试锚定目录，不污染其它用例。
+static OB_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn restore_default_data_dir() {
+    let _ = crate::core::store::write_pointer(&crate::core::store::boot_dir());
+    crate::core::store::redirect_data_dir(crate::core::store::boot_dir());
+}
+
+#[test]
+fn onboarding_confirm_defaults() {
+    let _g = OB_LOCK.lock().unwrap();
+    let mut a = app();
+    a.onboarding = Some(Onboarding::new());
+    a.update(Message::ObConfirm);
+    assert!(a.onboarding.is_none(), "确认后引导应退场");
+    assert_eq!(a.config.dsh_home, "", "默认 dsh-home 存空串（跟着数据目录走）");
+    assert!(
+        crate::core::store::config_exists(),
+        "确认应写出 config.json"
+    );
+    assert!(
+        !crate::core::store::pointer_path().exists() || {
+            let p = std::fs::read_to_string(crate::core::store::pointer_path()).unwrap();
+            p.trim() == crate::core::store::boot_dir().to_string_lossy()
+        },
+        "默认目录不应留下指向别处的 pointer"
+    );
+    restore_default_data_dir();
+}
+
+#[test]
+fn onboarding_confirm_custom_dirs() {
+    let _g = OB_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join("dshnext-tests-onboard");
+    let _ = std::fs::remove_dir_all(&root);
+    let launcher = root.join("data");
+    let home = root.join("harness-home");
+
+    let mut a = app();
+    a.onboarding = Some(Onboarding::new());
+    a.update(Message::ObEdit(
+        PickField::LauncherDir,
+        launcher.to_string_lossy().into_owned(),
+    ));
+    a.update(Message::ObEdit(
+        PickField::DshHome,
+        home.to_string_lossy().into_owned(),
+    ));
+    a.update(Message::ObConfirm);
+
+    assert!(a.onboarding.is_none(), "确认后引导应退场");
+    assert!(launcher.join("config.json").exists(), "config 应写进新数据目录");
+    assert!(home.exists(), "dsh-home 应被创建");
+    assert_eq!(
+        a.config.dsh_home,
+        home.to_string_lossy(),
+        "自定义 dsh-home 应存绝对路径"
+    );
+    let ptr = std::fs::read_to_string(crate::core::store::pointer_path())
+        .expect("自定义目录必须写 pointer");
+    assert_eq!(ptr.trim(), launcher.to_string_lossy());
+    // 会话内的路径全局应已改道
+    assert_eq!(crate::core::store::data_dir(), launcher);
+
+    // 清场：回到测试锚定目录，删 pointer 与临时树
+    restore_default_data_dir();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn onboarding_defaults_message_clears_drafts() {
+    let mut a = app();
+    a.onboarding = Some(Onboarding::new());
+    a.update(Message::ObEdit(PickField::LauncherDir, r"D:\somewhere".into()));
+    assert_eq!(a.onboarding.as_ref().unwrap().launcher_dir, r"D:\somewhere");
+    a.update(Message::ObDefaults);
+    let ob = a.onboarding.as_ref().unwrap();
+    assert!(ob.launcher_dir.is_empty() && ob.dsh_home.is_empty());
 }

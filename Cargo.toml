@@ -46,6 +46,9 @@ dirs = "5"
 futures-util = "0.3"
 # 替代 tauri-plugin-opener：打开系统浏览器与文件管理器（DESIGN.md §5）
 open = "5"
+# 首次启动引导的目录选择（Windows 走 IFileDialog，阻塞 API 在 spawn_blocking
+# 里调）。零运行时依赖不破：rfd 静态进 exe。
+rfd = "0.15"
 
 [profile.release]
 opt-level = 3

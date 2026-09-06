@@ -201,6 +201,18 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             Message::HoverExit,
         );
     }
+    // 首次启动目录引导：盖住一切（含模态），不可关闭；toast 仍在它之上。
+    // 两个默认路径都存在 Onboarding 状态里（view 借不走局部 String）。
+    if let Some(ob) = &app.onboarding {
+        layers = crate::ui::onboarding::overlay(
+            layers,
+            ob,
+            ob.launcher_default,
+            &ob.home_hint,
+            pal,
+            &app.anim,
+        );
+    }
 
     stack![
         layers,

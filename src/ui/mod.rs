@@ -12,6 +12,7 @@ pub mod glass_pipeline;
 pub mod glow_mesh;
 pub mod icon;
 pub mod modal;
+pub mod onboarding;
 pub mod reveal;
 pub mod titlebar;
 pub mod widgets;

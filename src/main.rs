@@ -49,7 +49,12 @@ fn main() -> iced::Result {
 
     // 主题解析：--theme 参数 > config.theme > 深色兜底。此前 config.theme 只
     // 落盘从不回读（重启后永远回到默认）——这次修掉。
+    // 路径解析必须先于 config 读取：pointer 文件决定 config 去哪找。
+    let data_dir = crate::core::store::init_data_dir();
     let cfg = crate::core::store::load();
+    crate::core::envres::init_home_from_config(&cfg.dsh_home);
+    // 首次启动（config.json 不存在）会弹目录引导；--onboarding 强制弹出供出图。
+    let force_onboarding = flag("--onboarding");
     let resolve = |s: &str| match s {
         "light" => Mode::Light,
         "system" if crate::core::platform::system_prefers_light() => Mode::Light,
@@ -78,7 +83,8 @@ fn main() -> iced::Result {
         unsafe { std::env::set_var("WGPU_BACKEND", "vulkan") };
     }
     log::info!(
-        "mode={mode:?} WGPU_BACKEND={:?} ICED_BACKEND={:?} shot={:?}",
+        "mode={mode:?} data_dir={} WGPU_BACKEND={:?} ICED_BACKEND={:?} shot={:?}",
+        data_dir.display(),
         std::env::var("WGPU_BACKEND").ok(),
         std::env::var("ICED_BACKEND").ok(),
         shot.as_ref().map(|s| (s.path.clone(), s.after)),
@@ -138,6 +144,9 @@ fn main() -> iced::Result {
             let mut app = Dshnext::new(mode, shot.clone(), autotest, e2e);
             app.page = start_page;
             app.switch = switch;
+            if force_onboarding {
+                app.onboarding = Some(app::Onboarding::new());
+            }
             app
         },
         Dshnext::update,

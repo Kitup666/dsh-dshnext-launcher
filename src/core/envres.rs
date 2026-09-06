@@ -1,6 +1,7 @@
 use crate::core::store::{data_dir, Config};
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::RwLock;
 use std::time::Duration;
 use tokio::process::Command;
 
@@ -22,7 +23,28 @@ pub fn dsh_cmd() -> PathBuf {
     dsh_prefix().join("dsh.cmd")
 }
 
+/// dsh-home 覆盖（config.dsh_home，首次启动引导设置；None = 默认 `<数据>/home`）。
+/// 进程级单次设定：启动时从 config 读一次，引导确认时改一次。
+static HOME_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+pub fn set_home_dir(p: PathBuf) {
+    *HOME_OVERRIDE.write().expect("HOME_OVERRIDE 锁") = Some(p);
+}
+
+/// 从 config 的 dsh_home 字段初始化覆盖（main 早期调用）。
+pub fn init_home_from_config(cfg_dsh_home: &str) {
+    let s = cfg_dsh_home.trim();
+    if !s.is_empty() {
+        set_home_dir(PathBuf::from(s));
+    }
+}
+
 pub fn home_dir() -> PathBuf {
+    if let Ok(g) = HOME_OVERRIDE.read() {
+        if let Some(p) = g.as_ref() {
+            return p.clone();
+        }
+    }
     data_dir().join("home")
 }
 

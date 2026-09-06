@@ -60,6 +60,60 @@ pub enum PluginTab {
     Market,
 }
 
+/// 首次启动引导里可「浏览」选择的两个目录字段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickField {
+    LauncherDir,
+    DshHome,
+}
+
+/// 首次启动引导的草稿。两个目录**空串 = 用默认**——输入框的 placeholder
+/// 显示默认路径，用户看得到自己将得到什么。
+pub struct Onboarding {
+    pub launcher_dir: String,
+    pub dsh_home: String,
+    /// 目录选择对话框为哪个字段打开（打开期间避免重复点「浏览」）。
+    pub picking: Option<PickField>,
+    /// placeholder 用的默认路径（启动器锚定目录）。`&'static`：view 借不走
+    /// 局部 String，创建时泄漏一次（引导是一次性浮层）。
+    pub launcher_default: &'static str,
+    /// dsh-home 的 placeholder：跟随 launcher 草稿（留空 = <启动器目录>/home）。
+    /// 存在状态里 view 才能借（ObEdit(LauncherDir) 时同步更新）。
+    pub home_hint: String,
+}
+
+impl Onboarding {
+    pub fn new() -> Self {
+        let launcher_default = crate::core::store::boot_dir()
+            .to_string_lossy()
+            .into_owned();
+        Self {
+            launcher_dir: String::new(),
+            dsh_home: String::new(),
+            picking: None,
+            launcher_default: Box::leak(launcher_default.into_boxed_str()),
+            home_hint: Self::home_hint_for(""),
+        }
+    }
+
+    /// dsh-home 的 placeholder：留空 = <启动器目录>/home（用户自定义了
+    /// launcher 还留空 home 时，默认值落在他选的目录下）。
+    pub fn home_hint_for(launcher_draft: &str) -> String {
+        let base = launcher_draft.trim();
+        if base.is_empty() {
+            crate::core::store::boot_dir()
+                .join("home")
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            std::path::PathBuf::from(base)
+                .join("home")
+                .to_string_lossy()
+                .into_owned()
+        }
+    }
+}
+
 pub struct Dshnext {
     // ---- 窗口与视觉 ----
     pub mode: Mode,
@@ -94,6 +148,9 @@ pub struct Dshnext {
     pub dialog: Option<Dialog>,
     /// 模态输入框的草稿值。
     pub draft: String,
+    /// 首次启动目录引导（None = 已配置过 / 自动化运行跳过）。非 None 时盖住
+    /// 整个界面且不可关闭——目录是它唯一的前置问题。
+    pub onboarding: Option<Onboarding>,
     pub toasts: Vec<Toast>,
 
     // ---- 后端数据 ----
@@ -187,6 +244,17 @@ pub enum Message {
     CloseDialog,
     DialogInput(String),
     DialogConfirm,
+
+    // 首次启动目录引导
+    ObEdit(PickField, String),
+    /// 打开系统目录选择对话框。
+    ObBrowse(PickField),
+    /// 选择结果（None = 用户取消）。
+    ObPicked(PickField, Option<String>),
+    /// 两个目录全部回到默认（草稿清空，placeholder 显示默认路径）。
+    ObDefaults,
+    /// 「开始使用」：建目录、写配置与 pointer、重新探测。
+    ObConfirm,
     ToastTick(Instant),
     Notify(ToastKind, String),
     /// 什么都不做。给「按钮在位但当前无动作」的场合用。
@@ -281,6 +349,14 @@ impl Dshnext {
         let mut config = crate::core::store::load();
         config.autostart = crate::core::platform::autostart_enabled();
         // 主题跟随 config；命令行 --theme 已在 main 里定过，这里以命令行为准。
+        // 首次启动（config 不存在）弹目录引导；--shot/--e2e/--autotest 的
+        // 无人值守运行跳过——自动化要的是可预期的界面，不该被浮层挡住。
+        let onboarding = if crate::core::store::config_exists() || shot.is_some() || autotest || e2e
+        {
+            None
+        } else {
+            Some(Onboarding::new())
+        };
         Self {
             mode,
             anim: AnimState::default(),
@@ -299,6 +375,7 @@ impl Dshnext {
             prev_page: None,
             dialog: None,
             draft: String::new(),
+            onboarding,
             toasts: Vec::new(),
 
             port_text: config.port.to_string(),
