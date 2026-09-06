@@ -399,6 +399,14 @@ fn data_dir_card<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Mes
                 space::horizontal(),
                 action_btn(
                     app,
+                    "env.editdirs",
+                    "修改",
+                    Variant::Secondary,
+                    Some(Message::OpenDirsEdit),
+                    pal,
+                ),
+                action_btn(
+                    app,
                     "env.opendir",
                     "在资源管理器中打开",
                     Variant::Secondary,

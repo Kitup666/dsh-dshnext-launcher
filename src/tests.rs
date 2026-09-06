@@ -36,7 +36,11 @@ fn isolate_data_dir() {
 
 fn app() -> Dshnext {
     isolate_data_dir();
-    Dshnext::new(Mode::Dark, None, false, false)
+    let mut a = Dshnext::new(Mode::Dark, None, false, false);
+    // config.json 是否存在是进程共享的磁盘状态，目录迁移用例会搬它——并行
+    // 测试里「引导盖住界面」会随机挡掉点击。除引导专项用例，一律关掉。
+    a.onboarding = None;
+    a
 }
 
 /// 造一个「环境就绪 + 有一个版本」的 app，让各页有内容可渲染、按钮可点。
@@ -500,8 +504,10 @@ fn onboarding_confirm_custom_dirs() {
     // 会话内的路径全局应已改道
     assert_eq!(crate::core::store::data_dir(), launcher);
 
-    // 清场：回到测试锚定目录，删 pointer 与临时树
+    // 清场：回到测试锚定目录，删 pointer 与临时树；home 覆盖也拨回去
+    // （confirm 走了 set_home_dir，不拨会残留给其它用例）。
     restore_default_data_dir();
+    crate::core::envres::set_home_dir(crate::core::store::boot_dir().join("home"));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -514,4 +520,69 @@ fn onboarding_defaults_message_clears_drafts() {
     a.update(Message::ObDefaults);
     let ob = a.onboarding.as_ref().unwrap();
     assert!(ob.launcher_dir.is_empty() && ob.dsh_home.is_empty());
+}
+
+#[test]
+fn dirs_edit_migrates_everything() {
+    let _g = OB_LOCK.lock().unwrap();
+    let boot = crate::core::store::boot_dir();
+    restore_default_data_dir();
+    // 造内容：数据目录里一个散文件 + home/profiles 里一个文件
+    std::fs::create_dir_all(boot.join("home").join("profiles"));
+    std::fs::write(boot.join("probe.txt"), b"x").unwrap();
+    std::fs::write(boot.join("home").join("profiles").join("p.txt"), b"y").unwrap();
+
+    let root = std::env::temp_dir().join("dshnext-tests-migrate");
+    let _ = std::fs::remove_dir_all(&root);
+    let launcher = root.join("newdata");
+    let home = root.join("newhome");
+
+    crate::core::migrate::relocate(launcher.clone(), home.clone(), true).unwrap();
+
+    assert_eq!(crate::core::store::data_dir(), launcher, "会话内应已改道");
+    assert!(launcher.join("probe.txt").exists(), "散文件应搬走");
+    assert!(!boot.join("probe.txt").exists(), "旧位置不应残留");
+    assert!(home.join("profiles").join("p.txt").exists(), "home 内容应搬走");
+    assert!(
+        launcher.join("config.json").exists(),
+        "config.json 应最后搬到新目录"
+    );
+    assert_eq!(
+        crate::core::store::load().dsh_home,
+        home.to_string_lossy(),
+        "自定义 dsh-home 应落盘"
+    );
+    let ptr = std::fs::read_to_string(crate::core::store::pointer_path())
+        .expect("改道必须写 pointer");
+    assert_eq!(ptr.trim(), launcher.to_string_lossy());
+    assert_eq!(crate::core::envres::home_dir(), home, "会话内 home 覆盖生效");
+
+    // 清场：路径全局拨回锚定目录，home 覆盖也拨回去
+    restore_default_data_dir();
+    crate::core::envres::set_home_dir(boot.join("home"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn dirs_edit_prefill_close_and_guard() {
+    let _g = OB_LOCK.lock().unwrap();
+    restore_default_data_dir();
+    let mut a = app();
+    a.onboarding = None; // OpenDirsEdit 与引导互斥，测试环境固定掉
+    drop(a.update(Message::OpenDirsEdit));
+    assert!(a.dirs_edit.as_ref().unwrap().first_run == false);
+    assert!(has_text(&a, "保存并转移"), "编辑模式应显示转移确认按钮");
+    // 实例在跑时确认被拦下（表单留着、不进入转移）
+    a.procs = vec![crate::core::procman::ProcStatus {
+        profile: "demo".into(),
+        port: 3080,
+        url: "http://127.0.0.1:3080".into(),
+        pid: 1,
+        uptime_secs: 1,
+    }];
+    drop(a.update(Message::ObConfirm));
+    assert!(a.dirs_edit.is_some(), "有实例运行时确认应被拒绝");
+    assert!(a.busy.is_none(), "被拦下不应进入忙状态");
+    drop(a.update(Message::ObClose));
+    assert!(a.dirs_edit.is_none(), "取消应关表单");
 }

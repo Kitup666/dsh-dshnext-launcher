@@ -55,6 +55,8 @@ fn main() -> iced::Result {
     crate::core::envres::init_home_from_config(&cfg.dsh_home);
     // 首次启动（config.json 不存在）会弹目录引导；--onboarding 强制弹出供出图。
     let force_onboarding = flag("--onboarding");
+    // --dirs-edit：直接开在设置页「修改目录」表单上（编辑模式），出图用。
+    let force_dirs_edit = flag("--dirs-edit");
     let resolve = |s: &str| match s {
         "light" => Mode::Light,
         "system" if crate::core::platform::system_prefers_light() => Mode::Light,
@@ -146,6 +148,10 @@ fn main() -> iced::Result {
             app.switch = switch;
             if force_onboarding {
                 app.onboarding = Some(app::Onboarding::new());
+            }
+            if force_dirs_edit {
+                app.dirs_edit = Some(app::Onboarding::for_edit(&app.config.dsh_home));
+                crate::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
             }
             app
         },

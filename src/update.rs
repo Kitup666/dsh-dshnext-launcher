@@ -11,6 +11,11 @@ use crate::ui::widgets::ToastKind;
 use iced::{Subscription, Task, window};
 use std::time::{Duration, Instant};
 
+/// 目录表单路由：设置页编辑优先于首启引导（两者不会同开，防御性排序）。
+fn dir_form_mut(app: &mut Dshnext) -> Option<&mut Onboarding> {
+    app.dirs_edit.as_mut().or(app.onboarding.as_mut())
+}
+
 impl Dshnext {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         // 交互链路取证：--e2e / 手动点击时用 RUST_LOG=dshnext=debug 看消息是否到达。
@@ -341,9 +346,9 @@ impl Dshnext {
             }
             Message::DialogConfirm => self.confirm_dialog(),
 
-            // ---------- 首次启动目录引导 ----------
+            // ---------- 目录表单（首启引导 / 设置页修改共用） ----------
             Message::ObEdit(f, v) => {
-                if let Some(ob) = &mut self.onboarding {
+                if let Some(ob) = dir_form_mut(self) {
                     match f {
                         PickField::LauncherDir => {
                             ob.launcher_dir = v;
@@ -355,7 +360,7 @@ impl Dshnext {
                 Task::none()
             }
             Message::ObBrowse(f) => {
-                if let Some(ob) = &mut self.onboarding {
+                if let Some(ob) = dir_form_mut(self) {
                     ob.picking = Some(f);
                 }
                 // rfd 的 IFileDialog 在阻塞线程上跑（COM 初始化由它自己管），
@@ -371,7 +376,7 @@ impl Dshnext {
                 )
             }
             Message::ObPicked(f, path) => {
-                if let Some(ob) = &mut self.onboarding {
+                if let Some(ob) = dir_form_mut(self) {
                     ob.picking = None;
                     if let Some(p) = path {
                         match f {
@@ -386,14 +391,38 @@ impl Dshnext {
                 Task::none()
             }
             Message::ObDefaults => {
-                if let Some(ob) = &mut self.onboarding {
+                if let Some(ob) = dir_form_mut(self) {
                     ob.launcher_dir.clear();
                     ob.dsh_home.clear();
                     ob.home_hint = Onboarding::home_hint_for("");
                 }
                 Task::none()
             }
-            Message::ObConfirm => self.confirm_onboarding(),
+            Message::ObConfirm => {
+                if self.dirs_edit.is_some() {
+                    self.confirm_dirs_edit()
+                } else {
+                    self.confirm_onboarding()
+                }
+            }
+            Message::OpenDirsEdit => {
+                // 与首启引导互斥（正常情况引导早关了；防御一下）。
+                if self.onboarding.is_none() {
+                    self.dirs_edit = Some(Onboarding::for_edit(&self.config.dsh_home));
+                    crate::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.anim
+                        .animate_to("modal", 1.0, Duration::from_millis(220), Instant::now());
+                }
+                Task::none()
+            }
+            Message::ObClose => {
+                if self.dirs_edit.take().is_some() {
+                    crate::app::DIRS_EDIT_OPEN.store(false, std::sync::atomic::Ordering::Relaxed);
+                    self.anim
+                        .animate_to("modal", 0.0, Duration::from_millis(150), Instant::now());
+                }
+                Task::none()
+            }
             Message::ToastTick(now) => {
                 self.toasts.retain(|t| t.until > now);
                 Task::none()
@@ -552,6 +581,17 @@ impl Dshnext {
                 match result {
                     Ok(()) => {
                         self.notify(ToastKind::Ok, format!("{what}完成"));
+                        // 目录转移走这条回调收尾：关掉编辑表单。
+                        if self.dirs_edit.take().is_some() {
+                            crate::app::DIRS_EDIT_OPEN
+                                .store(false, std::sync::atomic::Ordering::Relaxed);
+                            self.anim.animate_to(
+                                "modal",
+                                0.0,
+                                Duration::from_millis(150),
+                                Instant::now(),
+                            );
+                        }
                         // 装完立刻重新探测，界面上的版本号才会变。
                         Task::batch([
                             Task::done(Message::RefreshEnv),
@@ -1197,6 +1237,59 @@ impl Dshnext {
         }
     }
 
+    /// 设置页「修改目录」确认：先守门（实例在跑/有别的忙活不行），然后
+    /// 阻塞线程里跑 `core::migrate::relocate`（搬文件 + pointer + redirect +
+    /// config 落盘），OpDone(Ok) 负责收尾（关表单 + 重探环境）。
+    fn confirm_dirs_edit(&mut self) -> Task<Message> {
+        let Some(ob) = &self.dirs_edit else {
+            return Task::none();
+        };
+        // 进程的工作目录 / DSH_HOME 指着旧位置，跑着的时候搬不动也不该搬。
+        if !self.procs.is_empty() {
+            self.notify(ToastKind::Warn, "先停止所有运行中的实例，再修改目录");
+            return Task::none();
+        }
+        if self.busy.is_some() {
+            return Task::none();
+        }
+
+        let launcher = if ob.launcher_dir.trim().is_empty() {
+            crate::core::store::boot_dir()
+        } else {
+            std::path::PathBuf::from(ob.launcher_dir.trim())
+        };
+        let custom_home = !ob.dsh_home.trim().is_empty();
+        let home = if custom_home {
+            std::path::PathBuf::from(ob.dsh_home.trim())
+        } else {
+            launcher.join("home")
+        };
+        let launcher = std::path::absolute(&launcher).unwrap_or(launcher);
+        let home = std::path::absolute(&home).unwrap_or(home);
+
+        let from = crate::core::store::data_dir();
+        self.sys_log(
+            "env",
+            format!(
+                "目录转移：{} → {}（dsh-home → {}）",
+                from.display(),
+                launcher.display(),
+                home.display()
+            ),
+        );
+        self.busy = Some("正在转移目录…".into());
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    crate::core::migrate::relocate(launcher, home, custom_home)
+                })
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()))
+            },
+            |r| Message::OpDone("目录转移", r),
+        )
+    }
+
     fn on_core_event(&mut self, event: CoreEvent) -> Task<Message> {
         match event {
             CoreEvent::EnvProgress { task, line } => {
@@ -1325,12 +1418,18 @@ impl Dshnext {
                 else {
                     return None;
                 };
-                // ESC 关模态（模态是覆盖层，拿不到键盘焦点，只能走全局监听）
+                // ESC 关模态（模态是覆盖层，拿不到键盘焦点，只能走全局监听）。
+                // 目录编辑表单也是浮层：ESC 关它而不是下层模态（开合状态走
+                // 全局原子量——这个订阅只收裸 fn 指针，捕获不了状态）。
                 if matches!(
                     key,
                     iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
                 ) {
-                    return Some(Message::CloseDialog);
+                    return Some(if crate::app::DIRS_EDIT_OPEN.load(std::sync::atomic::Ordering::Relaxed) {
+                        Message::ObClose
+                    } else {
+                        Message::CloseDialog
+                    });
                 }
                 // Ctrl+1..6 切页（与上一代一致）
                 if modifiers.control() && !modifiers.alt() && !modifiers.shift() {

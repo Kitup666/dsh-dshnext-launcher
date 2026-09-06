@@ -27,6 +27,10 @@ pub const WINDOW_TITLE: &str = "DshDesk — DeepSeek Harness 启动器";
 /// 否则「订阅出帧」会自己触发下一帧，测出来的空闲是假的）。
 pub static DRAWS: AtomicU64 = AtomicU64::new(0);
 
+/// 目录编辑表单是否开着。ESC 的全局键盘订阅只能收裸 fn 指针（捕获不了
+/// 状态，同 `bridge` 的全局 channel 一族），去向放这里。
+pub static DIRS_EDIT_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// 日志环形缓冲上限（DESIGN.md §8 第 4 条）。
 pub const LOG_CAP: usize = 2000;
 /// toast 存活时长。
@@ -67,15 +71,18 @@ pub enum PickField {
     DshHome,
 }
 
-/// 首次启动引导的草稿。两个目录**空串 = 用默认**——输入框的 placeholder
-/// 显示默认路径，用户看得到自己将得到什么。
+/// 目录表单（首次启动引导与设置页「修改目录」共用同一套字段/消息/浮层，
+/// `first_run` 区分两者：引导不可关闭；编辑模式可取消、确认会**转移现有文件**）。
+/// 两个目录**空串 = 用默认**——输入框的 placeholder 显示默认路径，用户看得到
+/// 自己将得到什么。
 pub struct Onboarding {
+    pub first_run: bool,
     pub launcher_dir: String,
     pub dsh_home: String,
     /// 目录选择对话框为哪个字段打开（打开期间避免重复点「浏览」）。
     pub picking: Option<PickField>,
     /// placeholder 用的默认路径（启动器锚定目录）。`&'static`：view 借不走
-    /// 局部 String，创建时泄漏一次（引导是一次性浮层）。
+    /// 局部 String，创建时泄漏一次（浮层生命周期内只有一次）。
     pub launcher_default: &'static str,
     /// dsh-home 的 placeholder：跟随 launcher 草稿（留空 = <启动器目录>/home）。
     /// 存在状态里 view 才能借（ObEdit(LauncherDir) 时同步更新）。
@@ -88,12 +95,27 @@ impl Onboarding {
             .to_string_lossy()
             .into_owned();
         Self {
+            first_run: true,
             launcher_dir: String::new(),
             dsh_home: String::new(),
             picking: None,
             launcher_default: Box::leak(launcher_default.into_boxed_str()),
             home_hint: Self::home_hint_for(""),
         }
+    }
+
+    /// 设置页「修改目录」用的表单：预填当前实际值（非默认才填，保持
+    /// 「空串 = 默认」的约定）。
+    pub fn for_edit(current_dsh_home: &str) -> Self {
+        let mut ob = Self::new();
+        ob.first_run = false;
+        let data = crate::core::store::data_dir();
+        if data != crate::core::store::boot_dir() {
+            ob.launcher_dir = data.to_string_lossy().into_owned();
+        }
+        ob.dsh_home = current_dsh_home.trim().to_string();
+        ob.home_hint = Self::home_hint_for(&ob.launcher_dir);
+        ob
     }
 
     /// dsh-home 的 placeholder：留空 = <启动器目录>/home（用户自定义了
@@ -151,6 +173,9 @@ pub struct Dshnext {
     /// 首次启动目录引导（None = 已配置过 / 自动化运行跳过）。非 None 时盖住
     /// 整个界面且不可关闭——目录是它唯一的前置问题。
     pub onboarding: Option<Onboarding>,
+    /// 设置页「修改目录」表单（与 onboarding 共用浮层与 Ob* 消息；
+    /// 两者不会同时开着——Ob* 的路由是 dirs_edit 优先）。
+    pub dirs_edit: Option<Onboarding>,
     pub toasts: Vec<Toast>,
 
     // ---- 后端数据 ----
@@ -255,6 +280,10 @@ pub enum Message {
     ObDefaults,
     /// 「开始使用」：建目录、写配置与 pointer、重新探测。
     ObConfirm,
+    /// 环境页「修改」：打开编辑模式的目录表单（预填当前值）。
+    OpenDirsEdit,
+    /// 编辑模式的取消（首启引导没有这个出口）。
+    ObClose,
     ToastTick(Instant),
     Notify(ToastKind, String),
     /// 什么都不做。给「按钮在位但当前无动作」的场合用。
@@ -376,6 +405,7 @@ impl Dshnext {
             dialog: None,
             draft: String::new(),
             onboarding,
+            dirs_edit: None,
             toasts: Vec::new(),
 
             port_text: config.port.to_string(),

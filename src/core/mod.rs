@@ -15,6 +15,7 @@ pub mod diag;
 pub mod envres;
 pub mod event;
 pub mod installs;
+pub mod migrate;
 pub mod platform;
 pub mod plugins;
 pub mod procman;

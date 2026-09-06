@@ -213,6 +213,17 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             &app.anim,
         );
     }
+    // 设置页「修改目录」：同一浮层的编辑模式（可取消、确认会转移文件）。
+    if let Some(ob) = &app.dirs_edit {
+        layers = crate::ui::onboarding::overlay(
+            layers,
+            ob,
+            ob.launcher_default,
+            &ob.home_hint,
+            pal,
+            &app.anim,
+        );
+    }
 
     stack![
         layers,
