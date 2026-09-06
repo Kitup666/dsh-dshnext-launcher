@@ -98,6 +98,18 @@ fn main() -> iced::Result {
             .unwrap_or(1600),
     });
 
+    // 单实例：已有实例时把它的窗口恢复前置，然后退出。自动化/迁移路径放行——
+    // 出图批处理会跟用户正开着的实例并存，那是设计内的并存（用户实例的互斥
+    // 不受影响：自动化进程不拿互斥，也不挡下一个用户实例）。
+    let automation = shot.is_some()
+        || flag("--autotest")
+        || flag("--e2e")
+        || opt("--migrate-to").is_some()
+        || migrate_go.is_some();
+    if !automation && crate::win32::acquire_single_instance(crate::app::WINDOW_TITLE).is_err() {
+        return Ok(()).into();
+    }
+
     // 性能纪律 §8-3：限定 GPU 后端为 DX12，白省 38 MB（阶段 0 实测 117.8 → 79.8）。
     // wgpu 在 compositor 创建时才读这个变量，晚于 main，所以进程内设置有效。
     // 外部已设 WGPU_BACKEND 或 ICED_BACKEND=tiny-skia 时不覆盖；

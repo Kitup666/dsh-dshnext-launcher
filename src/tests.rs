@@ -439,6 +439,43 @@ fn running_instance_shows_stop() {
 
 // ------------------------------------------------ 首次启动目录引导
 
+/// 实例运行中时，改托管 runtime 的操作必须被守卫拦下（toast 警告、busy 不动、
+/// 不产生 OpDone）——装/卸到一半运行中的 harness 会吃到半新半旧模块。
+#[test]
+fn runtime_ops_guarded_while_running() {
+    let mut a = seeded_app();
+    a.procs = vec![crate::core::procman::ProcStatus {
+        profile: "demo".into(),
+        port: 3080,
+        url: "http://127.0.0.1:3080".into(),
+        pid: 4321,
+        uptime_secs: 75,
+    }];
+    for msg in [
+        Message::InstallDsh,
+        Message::InstallNode,
+        Message::InstallPnpm,
+        Message::InstallDshOffline(std::path::PathBuf::from("x.tgz")),
+        Message::InstallNodeOffline(std::path::PathBuf::from("x.zip")),
+        Message::InstallPnpmOffline(std::path::PathBuf::from("x.tgz")),
+    ] {
+        a.busy = None;
+        a.update(msg.clone());
+        assert!(a.busy.is_none(), "{msg:?} 不应开跑（守卫应拦下）");
+        assert!(
+            a.toasts.iter().any(|t| t.text.contains("先停止")),
+            "{msg:?} 应弹「先停止」警告"
+        );
+    }
+    // 卸载走 Dialog 确认臂，同样要有守卫。
+    for d in [Dialog::RemoveDsh, Dialog::RemoveNode] {
+        a.busy = None;
+        a.dialog = Some(d.clone());
+        a.update(Message::DialogConfirm);
+        assert!(a.busy.is_none(), "{d:?} 不应在实例运行中开跑");
+    }
+}
+
 // 引导确认会改进程级全局（DATA_DIR / pointer / 磁盘），两个用例必须串行，
 // 结束时把全局拨回测试锚定目录，不污染其它用例。
 static OB_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

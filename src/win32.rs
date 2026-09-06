@@ -46,6 +46,36 @@ pub fn set_topmost(title: &str, on: bool) {
     }
 }
 
+/// 单实例互斥：进程级资源（ProcMap、托盘、config 写入、自更新 rename）
+/// 都按「一个启动器」设计，双开会互相看不见对方的子进程、互踩 config。
+///
+/// - `Ok(())` = 拿到互斥，本实例是第一个（句柄存全局，进程退出 OS 自动释放，
+///   崩溃也不会留死锁——这正是选互斥对象而不是指针文件的原因）。
+/// - `Err(())` = 已有实例在跑，已尝试把它的窗口恢复并前置，调用方直接退出。
+pub fn acquire_single_instance(title: &str) -> Result<(), ()> {
+    // 互斥句柄必须一直攥着（一放下互斥就失效），进程内没人用它但得活着。
+    static KEEP: std::sync::Mutex<Option<isize>> = std::sync::Mutex::new(None);
+    unsafe {
+        let name: Vec<u16> = "Local\\Dshnext.SingleInstance"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let handle = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+        if handle == 0 {
+            // 创建失败（极罕见）：宁可不拦，别把正常启动拦死。
+            log::warn!("单实例互斥创建失败，放行");
+            return Ok(());
+        }
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            log::info!("已有实例在运行，前置其窗口后退出");
+            show_main_window(title);
+            return Err(());
+        }
+        *KEEP.lock().expect("单实例句柄锁") = Some(handle);
+        Ok(())
+    }
+}
+
 const HWND_TOPMOST: isize = -1;
 const HWND_NOTOPMOST: isize = -2;
 const SWP_NOSIZE: u32 = 0x0001;
@@ -76,4 +106,8 @@ unsafe extern "system" {
     #[allow(non_snake_case)]
     fn SetWindowPos(hwnd: isize, after: isize, x: i32, y: i32, w: i32, h: i32, flags: u32) -> bool;
     fn GetWindowThreadProcessId(hwnd: isize, pid: *mut u32) -> u32;
+    fn CreateMutexW(attr: *const u32, initial: i32, name: *const u16) -> isize;
+    fn GetLastError() -> u32;
 }
+
+const ERROR_ALREADY_EXISTS: u32 = 183;

@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 fn dir_form_mut(app: &mut Dshnext) -> Option<&mut Onboarding> {
     app.dirs_edit.as_mut().or(app.onboarding.as_mut())
 }
-
 impl Dshnext {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         // 交互链路取证：--e2e / 手动点击时用 RUST_LOG=dshnext=debug 看消息是否到达。
@@ -520,6 +519,9 @@ impl Dshnext {
                 Task::done(Message::LoadVersions)
             }
             Message::InstallNode => {
+                if let Some(t) = self.require_stopped("安装 Node.js") {
+                    return t;
+                }
                 let label = format!("正在下载安装便携版 Node.js {}", self.node_pick);
                 self.busy = Some(label.clone());
                 self.sys_log("env", label);
@@ -532,6 +534,9 @@ impl Dshnext {
                 )
             }
             Message::InstallDsh => {
+                if let Some(t) = self.require_stopped("安装 dsh") {
+                    return t;
+                }
                 let label = format!("正在安装 dsh {}", self.dsh_pick);
                 self.busy = Some(label.clone());
                 self.sys_log("env", label);
@@ -544,6 +549,9 @@ impl Dshnext {
                 )
             }
             Message::InstallNodeOffline(zip) => {
+                if let Some(t) = self.require_stopped("离线安装 Node.js") {
+                    return t;
+                }
                 self.busy = Some("正在离线安装便携版 Node.js".into());
                 self.sys_log("env", format!("离线安装 Node：{}", zip.display()));
                 let tx = bridge::sink();
@@ -553,6 +561,9 @@ impl Dshnext {
                 )
             }
             Message::InstallDshOffline(tgz) => {
+                if let Some(t) = self.require_stopped("离线安装 dsh") {
+                    return t;
+                }
                 self.busy = Some("正在离线安装 dsh".into());
                 self.sys_log("env", format!("离线安装 dsh：{}", tgz.display()));
                 let tx = bridge::sink();
@@ -563,6 +574,9 @@ impl Dshnext {
                 )
             }
             Message::InstallPnpmOffline(tgz) => {
+                if let Some(t) = self.require_stopped("离线安装 pnpm") {
+                    return t;
+                }
                 self.busy = Some("正在离线安装 pnpm".into());
                 self.sys_log("env", format!("离线安装 pnpm：{}", tgz.display()));
                 let tx = bridge::sink();
@@ -587,6 +601,9 @@ impl Dshnext {
                 Task::none()
             }
             Message::InstallPnpm => {
+                if let Some(t) = self.require_stopped("安装 pnpm") {
+                    return t;
+                }
                 self.busy = Some("正在安装 pnpm".into());
                 self.sys_log("env", "正在安装 pnpm");
                 let tx = bridge::sink();
@@ -1161,6 +1178,9 @@ impl Dshnext {
                 .chain(Task::done(Message::RefreshPlugins))
             }
             Dialog::RemoveNode => {
+                if let Some(t) = self.require_stopped("删除托管 Node.js") {
+                    return t;
+                }
                 self.busy = Some("正在删除托管 Node.js".into());
                 Task::perform(
                     async {
@@ -1172,6 +1192,9 @@ impl Dshnext {
                 )
             }
             Dialog::RemoveDsh => {
+                if let Some(t) = self.require_stopped("卸载 dsh") {
+                    return t;
+                }
                 self.busy = Some("正在卸载 dsh".into());
                 Task::perform(
                     async {
@@ -1249,6 +1272,22 @@ impl Dshnext {
     /// 设置页「修改目录」确认：先守门（实例在跑/有别的忙活不行），然后
     /// 阻塞线程里跑 `core::migrate::relocate`（搬文件 + pointer + redirect +
     /// config 落盘），OpDone(Ok) 负责收尾（关表单 + 重探环境）。
+    /// 改动托管 runtime 的操作（装/卸 dsh、Node、pnpm）都会覆盖或删除正被
+    /// harness 进程使用的文件——node 惰性加载模块树，装到一半实例会吃到
+    /// 半新半旧的模块；删运行中的 node.exe 更会半途失败留残局。与目录迁移
+    /// 同一道闸。返回 Some(task) = 有实例在跑，调用方直接 return 这个 task。
+    fn require_stopped(&mut self, what: &str) -> Option<Task<Message>> {
+        if self.procs.is_empty() {
+            None
+        } else {
+            self.notify(
+                ToastKind::Warn,
+                format!("先停止所有运行中的实例，再{what}"),
+            );
+            Some(Task::none())
+        }
+    }
+
     fn confirm_dirs_edit(&mut self) -> Task<Message> {
         let Some(ob) = &self.dirs_edit else {
             return Task::none();
