@@ -240,9 +240,11 @@ fn console_clear_and_empty_state() {
 
     a.update(Message::ClearLogs);
     assert!(a.logs.is_empty());
+    // 空态改成图标圈 + 标题/说明两行（widgets::empty_state）。
+    assert!(has_text(&a, "暂无输出"), "清空后应显示空状态标题");
     assert!(
-        has_text(&a, "暂无输出。启动 harness 或安装插件后，日志会实时出现在这里。"),
-        "清空后应显示空状态"
+        has_text(&a, "启动 harness 或安装插件后，日志会实时出现在这里。"),
+        "清空后应显示空状态说明"
     );
 }
 

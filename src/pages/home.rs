@@ -3,9 +3,11 @@
 use crate::app::{Dshnext, Message};
 use crate::pages::{Page, fmt_uptime};
 use crate::theme::{FS_BODY, FS_HERO, FS_MICRO, FS_TINY, GAP_SECTION, Palette};
+use crate::ui::anim::{self, PAGE_SHIFT};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
+use crate::ui::reveal_at;
 use crate::ui::widgets::{self, Tone};
-use crate::ui::{card, mono, txt, txt_bold};
+use crate::ui::{card, disp, disp_bold, mono, txt, txt_bold};
 use iced::widget::{Column, Row, column, container, row, scrollable, space};
 use iced::{Alignment, Element, Fill};
 
@@ -14,10 +16,16 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     // 首页没有 page_head——hero 自己就是页头，所以它与下面的列表卡之间用大档间距，
     // 不是 GAP_CARD（那是同级卡片之间的量）。列本身 Fill 高：实例卡的 Fill
     // 才能吃到剩余空间（见 instances）。
-    column![hero(app, pal), instances(app, pal)]
-        .spacing(GAP_SECTION)
-        .height(Fill)
-        .into()
+    // 切页入场错峰：hero 先落位，实例卡迟到 20%（总时长 280ms → 相差 ~56ms，
+    // motion-designer 的 stagger：一次编排好的入场比散微动效更出效果）。
+    let t = app.anim.value(anim::PAGE);
+    column![
+        reveal_at(hero(app, pal), t, PAGE_SHIFT, 0.0),
+        reveal_at(instances(app, pal), t, PAGE_SHIFT, 0.2),
+    ]
+    .spacing(GAP_SECTION)
+    .height(Fill)
+    .into()
 }
 
 /// hero 卡（CSS `.hero`）：eyebrow + 大标题 + 描述 + 操作 + meta 带。
@@ -40,8 +48,13 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
     let narrow = app.narrow();
 
     let left = column![
-        txt("DEEPSEEK HARNESS").size(FS_MICRO).color(pal.text_3),
-        txt_bold(title).size(FS_HERO).color(pal.text),
+        // overline：机器声小标签。display 字体 + 提亮的 accent——纯 accent
+        // (#4a63e0) 在深卡上对比只有 3.6:1，10px 字过不了 4.5:1 的下限，
+        // 混 30% 白到 5.6:1（WCAG 纪律）。
+        disp("DEEPSEEK HARNESS")
+            .size(FS_MICRO)
+            .color(crate::theme::mix_white(pal.accent, 0.30)),
+        disp_bold(title).size(FS_HERO).color(pal.text),
         txt(desc).size(FS_BODY).color(pal.text_2),
     ]
     .spacing(6);
@@ -152,6 +165,8 @@ fn meta_strip<'a>(
     };
 
     // 空闲时这只是「将要用的」端口，用弱色区分，否则整行读起来像已经在服务。
+    // 不再带「待用」后缀：display 等宽比 Cascadia 宽，5 列等分装不下会折行
+    // （截图实测「待用」被挤到第二行）；语义由「状态：空闲」承担。
     let (addr, addr_color) = match running {
         Some(p) => (
             p.url
@@ -160,13 +175,13 @@ fn meta_strip<'a>(
                 .to_string(),
             pal.text,
         ),
-        None => (format!("127.0.0.1:{} 待用", app.config.port), pal.text_3),
+        None => (format!("127.0.0.1:{}", app.config.port), pal.text_3),
     };
 
     let cell_status = meta_cell("状态", status, pal);
     let cell_uptime = meta_cell(
         "运行时长",
-        txt_bold(
+        disp_bold(
             running
                 .map(|p| fmt_uptime(p.uptime_secs))
                 .unwrap_or_else(|| DASH.into())
@@ -176,20 +191,20 @@ fn meta_strip<'a>(
         .into(),
         pal,
     );
-    let cell_addr = meta_cell("WEB 地址", mono(addr).size(FS_BODY).color(addr_color).into(), pal);
+    // 机器值（地址/PID/计数）统一走 display 等宽——Martian 的数字天然等宽，
+    // 且与 hero 同一声部；路径、日志仍归 Cascadia（console/表单）。
+    let cell_addr = meta_cell("WEB 地址", disp(addr).size(FS_BODY).color(addr_color).into(), pal);
     let cell_pid = meta_cell(
         "进程 PID",
-        // 有值走等宽（数字对齐），无值走正文——同一个破折号在两种字体下宽度不同，
-        // 混用会让两个空位看起来是不同符号。
         match running {
-            Some(p) => mono(p.pid.to_string()).size(FS_BODY).color(pal.text).into(),
-            None => txt_bold(DASH).size(FS_BODY).color(pal.text).into(),
+            Some(p) => disp(p.pid.to_string()).size(FS_BODY).color(pal.text).into(),
+            None => disp(DASH).size(FS_BODY).color(pal.text).into(),
         },
         pal,
     );
     let cell_plugins = meta_cell(
         "插件",
-        txt_bold(format!("{plugin_count} 个")).size(FS_BODY).color(pal.text).into(),
+        disp_bold(format!("{plugin_count} 个")).size(FS_BODY).color(pal.text).into(),
         pal,
     );
 
@@ -242,12 +257,18 @@ fn instances<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message
 
     if app.procs.is_empty() {
         // 空态在剩余高度里垂直居中：高卡片的空态不是「贴在标题下面」，
-        // 而是占据面板中心。
+        // 而是占据面板中心。图标圈给大空白一个落点，说明顺手把动作讲清楚。
         col = col.push(
-            container(widgets::empty("当前没有运行中的实例", pal))
-                .width(Fill)
-                .height(Fill)
-                .align_y(Alignment::Center),
+            container(widgets::empty_state(
+                crate::ui::icon::LAUNCH,
+                "没有运行中的实例",
+                "每个版本独立进程，可同时运行多个（注意端口不要冲突）。从上方选择一个版本，一键启动。",
+                None,
+                pal,
+            ))
+            .width(Fill)
+            .height(Fill)
+            .align_y(Alignment::Center),
         );
     } else {
         let mut rows = Column::new();

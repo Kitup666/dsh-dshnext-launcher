@@ -17,9 +17,8 @@ use crate::ui::glow_mesh;
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal;
-use crate::ui::reveal::reveal;
 use crate::ui::widgets;
-use crate::ui::{card, mono, titlebar, txt, txt_bold};
+use crate::ui::{card, disp, disp_bold, titlebar, txt};
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, space, stack};
 use iced::{
     Alignment, Border, Color, Element, Fill, Length, Padding, Shadow, Theme,
@@ -135,15 +134,11 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         .into()
     };
 
-    // 切页入场：内容整体上移落位（src/ui/reveal.rs）。面纱淡入已删——盖整块区域
-    // 会让背景变暗，用户否了。只包主区一个元素——侧边栏和标题栏不动，视线才有
-    // 锚点；同时也是「一次只动 1~2 个元素」这条动效纪律。落定后 t=0，reveal 走
-    // 直通分支，零开销。
-    let main_area: Element<'_, Message> = reveal(
-        body,
-        app.anim.value(anim::PAGE),
-        anim::PAGE_SHIFT,
-    );
+    // 切页入场不再包外壳整体位移——改为各页对**每张卡**错峰落位
+    // （reveal_at + delay，见 home/profiles/plugins/env/settings/console）。
+    // 一次编排好的入场（卡片依次就位）比整页平移更有设计感；侧边栏和
+    // 标题栏不动，视线锚点保留。
+    let main_area: Element<'_, Message> = body;
 
     // 布局：侧边栏（含**独立的品牌头部单元**）｜分隔线｜主区列（细窗口条 +
     // 页面）。窗口条只管拖动+窗口按钮，横跨主区上方；品牌块是侧边栏自己
@@ -244,7 +239,9 @@ fn brand<'a>(pal: &'static Palette) -> Element<'a, Message> {
             .width(Length::Fixed(34.0))
             .height(Length::Fixed(34.0)),
         column![
-            txt_bold("DshDesk").size(FS_TITLE).color(pal.text),
+            // 品牌名走 display 字体（Martian Mono）——侧边栏的「机器声」签名；
+            // 副标题是中文，Noto 保留。
+            disp_bold("DshDesk").size(FS_TITLE).color(pal.text),
             txt("DeepSeek Harness 启动器").size(FS_MICRO).color(pal.text_3),
         ],
     ]
@@ -446,7 +443,7 @@ fn foot_row<'a>(k: &'static str, v: String, pal: &'static Palette) -> Element<'a
     row![
         txt(k).size(FS_TINY).color(pal.text_3),
         space::horizontal(),
-        mono(widgets::ellipsize(&v, 16)).size(FS_TINY).color(pal.text_2),
+        disp(widgets::ellipsize(&v, 16)).size(FS_TINY).color(pal.text_2),
     ]
     .width(Fill)
     .into()

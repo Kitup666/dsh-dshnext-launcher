@@ -21,6 +21,7 @@ use iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, overlay, r
 use iced::{Element, Event, Length, Rectangle, Size, Vector};
 
 /// 包一层入场动画。`t` 是剩余进度（1 = 刚切过来、0 = 落定），`shift` 是起始下移距离。
+#[allow(dead_code)]
 pub fn reveal<'a, Message, Theme, Renderer>(
     content: impl Into<Element<'a, Message, Theme, Renderer>>,
     t: f32,
@@ -31,10 +32,29 @@ where
     Theme: 'a,
     Renderer: iced::advanced::Renderer + 'a,
 {
+    reveal_at(content, t, shift, 0.0)
+}
+
+/// 错峰版：`delay` ∈ [0,1) 是整段入场时长里这张卡**迟到**的比例。
+/// 有效进度 `(t-delay)/(1-delay)` —— delay=0 与 `reveal` 完全一致，
+/// delay=0.3 的卡在总时长的后 70% 里走完自己的位移（motion-designer 的
+/// stagger 纪律：总错峰封顶 ~400ms，后面的卡走得快一点才不会拖沓）。
+pub fn reveal_at<'a, Message, Theme, Renderer>(
+    content: impl Into<Element<'a, Message, Theme, Renderer>>,
+    t: f32,
+    shift: f32,
+    delay: f32,
+) -> Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a,
+    Theme: 'a,
+    Renderer: iced::advanced::Renderer + 'a,
+{
     Element::new(Reveal {
         content: content.into(),
         t: t.clamp(0.0, 1.0),
         shift,
+        delay: delay.clamp(0.0, 0.99),
     })
 }
 
@@ -42,6 +62,7 @@ struct Reveal<'a, Message, Theme, Renderer> {
     content: Element<'a, Message, Theme, Renderer>,
     t: f32,
     shift: f32,
+    delay: f32,
 }
 
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -136,14 +157,15 @@ where
         viewport: &Rectangle,
     ) {
         // 落定态走原路：不推变换，和没包这层完全一样。
-        if self.t <= f32::EPSILON {
+        let te = ((self.t - self.delay) / (1.0 - self.delay)).clamp(0.0, 1.0);
+        if te <= f32::EPSILON {
             self.content
                 .as_widget()
                 .draw(tree, renderer, theme, style, layout, cursor, viewport);
             return;
         }
 
-        renderer.with_translation(Vector::new(0.0, self.shift * self.t), |renderer| {
+        renderer.with_translation(Vector::new(0.0, self.shift * te), |renderer| {
             self.content
                 .as_widget()
                 .draw(tree, renderer, theme, style, layout, cursor, viewport);

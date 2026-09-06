@@ -3,9 +3,11 @@
 use crate::app::{Dshnext, Message};
 use crate::pages::home::row_btn;
 use crate::theme::{FS_BODY, FS_TINY, Palette};
+use crate::ui::anim::{self, PAGE_SHIFT};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal::Dialog;
+use crate::ui::reveal_at;
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono, txt, txt_bold};
 use iced::widget::{Column, Row, column, row, space};
@@ -29,10 +31,12 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         pal,
     );
 
-    let mut body = Column::new();
+    // 错峰入场：busy / 离线 / 检测 / 数据目录按出现顺序依次落位，
+    // 每张迟 8%，封顶 32%（总错峰 ≤ ~130ms，motion-designer 的 cap）。
+    let mut cards: Vec<Element<'_, Message>> = Vec::new();
 
     if let Some(busy) = &app.busy {
-        body = body.push(card::card(
+        cards.push(card::card(
             column![
                 widgets::busy(busy.as_str(), pal),
                 txt("安装过程的完整输出会实时写入「控制台」页。")
@@ -46,14 +50,20 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 
     if let Some(packs) = &app.offline {
         if packs.any() {
-            body = body.push(offline_card(app, packs, pal));
+            cards.push(offline_card(app, packs, pal));
         }
     }
 
-    body = body
-        .push(detect_card(app, pal))
-        .push(data_dir_card(app, pal));
-    widgets::page_stack(head, body).into()
+    cards.push(detect_card(app, pal));
+    cards.push(data_dir_card(app, pal));
+
+    let t = app.anim.value(anim::PAGE);
+    let mut body = Column::new();
+    for (i, c) in cards.into_iter().enumerate() {
+        let d = (i as f32 * 0.08).min(0.32);
+        body = body.push(reveal_at(c, t, PAGE_SHIFT, d));
+    }
+    widgets::page_stack(reveal_at(head, t, PAGE_SHIFT, 0.0), body).into()
 }
 
 /// 离线安装卡（roadmap #9）：`<数据目录>\offline\` 里有约定命名的包才出现。

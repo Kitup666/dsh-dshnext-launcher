@@ -3,9 +3,11 @@
 use crate::app::{Dshnext, Message};
 use crate::pages::home::row_btn;
 use crate::theme::{FS_BODY, FS_TINY, Palette};
+use crate::ui::anim::{self, PAGE_SHIFT};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal::Dialog;
+use crate::ui::reveal_at;
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono, txt, txt_bold};
 use iced::widget::{Column, column, container, mouse_area, row, space};
@@ -30,8 +32,11 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 
     let mut list = Column::new().spacing(0);
     if app.profiles.is_empty() {
-        list = list.push(widgets::empty(
-            "还没有版本。点右上角「新建版本」创建第一个。",
+        list = list.push(widgets::empty_state(
+            icon::VERSIONS,
+            "还没有版本",
+            "点右上角「新建版本」创建第一个（也可点下面的占位框）。",
+            None,
             pal,
         ));
     } else {
@@ -43,12 +48,18 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         }
     }
 
-    let mut body = Column::new().push(card::card(list, pal));
+    // 错峰：页头先落位，列表卡迟到 12%，ghost 占位行再迟一拍。
+    // spacing 原来由 page_stack 补，现在卡各自包了 reveal（Element），
+    // 得自己按 GAP_CARD 排。
+    let t = app.anim.value(anim::PAGE);
+    let mut body = Column::new()
+        .spacing(crate::theme::GAP_CARD)
+        .push(reveal_at(card::card(list, pal), t, PAGE_SHIFT, 0.12));
     if !app.profiles.is_empty() {
-        body = body.push(ghost_new_row(pal));
+        body = body.push(reveal_at(ghost_new_row(pal), t, PAGE_SHIFT, 0.2));
     }
 
-    widgets::page_stack(head, body).into()
+    widgets::page_stack(reveal_at(head, t, PAGE_SHIFT, 0.0), body).into()
 }
 
 /// 列表尾的 ghost 占位行（judge P6）：给列表一个「完整且可继续」的收尾，

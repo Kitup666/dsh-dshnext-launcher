@@ -2,10 +2,11 @@
 //! 逐条对应上一代 `styles.css` 里的 `.tag` / `.list-row` / `.empty` / `.input` …
 
 use crate::theme::{
-    self, FS_BODY, FS_HEAD, FS_MICRO, FS_SMALL, FS_TINY, GAP_CARD, GAP_SECTION, Palette, R_CTL,
-    R_PILL,
+    self, FS_BODY, FS_HEAD, FS_MICRO, FS_SMALL, FS_TITLE, FS_TINY, GAP_CARD, GAP_SECTION, Palette,
+    R_CTL, R_PILL,
 };
 use crate::ui::anim::AnimState;
+use crate::ui::icon;
 use crate::ui::{FONT_MONO, FONT_SANS, mono, txt, txt_bold};
 use iced::widget::text::IntoFragment;
 use iced::widget::{
@@ -195,6 +196,57 @@ pub fn empty<'a, Message: 'a>(
     pal: &'static Palette,
 ) -> Element<'a, Message> {
     container(txt(text_).size(FS_BODY).color(pal.text_3))
+        .width(Fill)
+        .padding(Padding::from([30, 24]))
+        .align_x(Alignment::Center)
+        .into()
+}
+
+/// 有构图感的空状态：图标圈 + 标题 + 说明 + 可选动作。大卡片（首页实例、
+/// 插件列表）的空白区不该是一行孤零零的灰字——那是「渲染破洞」感；
+/// 图标圈给视线一个落点，动作给出路。
+/// `action` 由调用方构造（按钮要接 hover 补间，widgets 里拿不到 AnimState）。
+pub fn empty_state<'a, Message: 'a>(
+    icon_data: &'static [u8],
+    title: impl IntoFragment<'a>,
+    sub: impl IntoFragment<'a>,
+    action: Option<Element<'a, Message>>,
+    pal: &'static Palette,
+) -> Element<'a, Message> {
+    // 图标圈：44px 圆，accent 软底 + 细描边。带色相的半透明底只此一小块
+    // （~0.14 alpha 与输入框选区同档），面积小不会触发物理混色的放大问题。
+    let ring = container(icon::icon::<Message>(icon_data, 20.0, pal.accent))
+        .width(Length::Fixed(44.0))
+        .height(Length::Fixed(44.0))
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_theme: &Theme| container::Style {
+            text_color: None,
+            background: Some(pal.accent_soft.into()),
+            border: Border {
+                color: pal.accent_line,
+                width: 0.8,
+                radius: R_PILL.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        });
+
+    let mut col = column![ring]
+        .spacing(14)
+        .align_x(Alignment::Center)
+        .max_width(420);
+    col = col.push(
+        txt_bold(title).size(FS_TITLE).color(pal.text_2),
+    );
+    col = col.push(
+        txt(sub).size(FS_SMALL).color(pal.text_3),
+    );
+    if let Some(a) = action {
+        col = col.push(a);
+    }
+
+    container(col)
         .width(Fill)
         .padding(Padding::from([30, 24]))
         .align_x(Alignment::Center)

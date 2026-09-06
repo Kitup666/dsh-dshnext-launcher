@@ -316,14 +316,18 @@ impl Dshnext {
             Message::OpenDialog(d) => {
                 self.draft = d.initial();
                 self.dialog = Some(d);
-                // 模态淡入。
-                self.anim.animate_to("modal", 1.0, HOVER_DUR, Instant::now());
+                // 模态淡入 220ms（motion-designer：modal open 200–300 ease-out，
+                // 比 hover 慢才有「浮层」的重量感）。
+                self.anim
+                    .animate_to("modal", 1.0, Duration::from_millis(220), Instant::now());
                 Task::none()
             }
             Message::CloseDialog => {
                 self.dialog = None;
                 self.draft.clear();
-                self.anim.animate_to("modal", 0.0, HOVER_DUR, Instant::now());
+                // 关闭比打开快（150ms vs 220ms）——退场拖沓会让界面显得粘手。
+                self.anim
+                    .animate_to("modal", 0.0, Duration::from_millis(150), Instant::now());
                 Task::none()
             }
             Message::DialogInput(v) => {
@@ -985,7 +989,9 @@ impl Dshnext {
         }
         self.dialog = None;
         self.draft.clear();
-        self.anim.animate_to("modal", 0.0, HOVER_DUR, Instant::now());
+        // 确认也是关闭：走快速退场（同 CloseDialog）。
+        self.anim
+            .animate_to("modal", 0.0, Duration::from_millis(150), Instant::now());
 
         match dialog {
             Dialog::CreateProfile => {

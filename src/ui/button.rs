@@ -156,10 +156,18 @@ fn style_for(
 
     let mut style = match variant {
         Variant::Secondary => button::Style {
-            background: Some(theme::lerp(pal.surface_1, pal.surface_2, t).into()),
+            // 按压反馈（motion-designer 微交互 100–200ms 一档）：底色沉到
+            // surface_3、描边到最亮——即时阶跃即可，压着的那一下要「有手感」。
+            background: Some(
+                theme::lerp(pal.surface_1, pal.surface_2, t).into(),
+            ),
             text_color: pal.text,
             border: Border {
-                color: theme::lerp(pal.border_mid, pal.border_hi, t),
+                color: if pressed {
+                    pal.border_hi
+                } else {
+                    theme::lerp(pal.border_mid, pal.border_hi, t)
+                },
                 width: 0.3,
                 radius,
             },
@@ -169,7 +177,14 @@ fn style_for(
         Variant::Accent => button::Style {
             // 底色只在 surface 之间插值（中性），accent 只出现在描边和文字上
             // ——§7.5 第 15 条：带色相的半透明叠色在物理混色下会被放大。
-            background: Some(theme::lerp(pal.surface_1, pal.surface_2, t).into()),
+            background: Some(
+                if pressed {
+                    pal.surface_3
+                } else {
+                    theme::lerp(pal.surface_1, pal.surface_2, t)
+                }
+                .into(),
+            ),
             text_color: theme::lerp(pal.accent, pal.accent_hi, t),
             border: Border {
                 color: theme::lerp(pal.accent_line, pal.accent, t),
@@ -224,7 +239,14 @@ fn style_for(
             }
         }
         Variant::QuietDanger => button::Style {
-            background: Some(theme::lerp(Color::TRANSPARENT, pal.bad_soft, t).into()),
+            background: Some(
+                if pressed {
+                    pal.bad_soft
+                } else {
+                    theme::lerp(Color::TRANSPARENT, pal.bad_soft, t)
+                }
+                .into(),
+            ),
             text_color: theme::lerp(pal.text_2, pal.bad, t),
             border: Border {
                 color: theme::lerp(pal.border_mid, pal.bad, t),
@@ -235,7 +257,15 @@ fn style_for(
             snap: true,
         },
         Variant::Ghost => button::Style {
-            background: Some(theme::lerp(Color::TRANSPARENT, pal.hover, t).into()),
+            background: Some(
+                if pressed {
+                    // 按住时 hover 叠色加深一倍（4% → 8%）。
+                    theme::with_alpha(pal.hover, (pal.hover.a * 2.0).min(1.0))
+                } else {
+                    theme::lerp(Color::TRANSPARENT, pal.hover, t)
+                }
+                .into(),
+            ),
             text_color: theme::lerp(pal.text_2, pal.text, t),
             border: no_border,
             shadow: Shadow::default(),

@@ -74,8 +74,11 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     let body: Element<'_, Message> = if total == 0 {
         // 空状态要在整块日志区里居中，而不是贴在顶部——控制台卡片是撑满高度的，
         // 顶部对齐会在下面留一大片没有边界的黑，看着像布局坏了。
-        container(widgets::empty(
-            "暂无输出。启动 harness 或安装插件后，日志会实时出现在这里。",
+        container(widgets::empty_state(
+            crate::ui::icon::CONSOLE,
+            "暂无输出",
+            "启动 harness 或安装插件后，日志会实时出现在这里。",
+            None,
             pal,
         ))
         .width(Fill)
@@ -135,16 +138,23 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
 
     // 控制台要占满剩余高度：卡片内部自己滚，页面外层不滚（见 pages::view）。
     // 这里不用 page_stack：它给的是 Shrink 的 Column，撑不满高度。
+    // 错峰入场：页头先落位，日志卡迟到 12%。
+    let t = app.anim.value(crate::ui::anim::PAGE);
     column![
-        head,
+        crate::ui::reveal_at(head, t, crate::ui::anim::PAGE_SHIFT, 0.0),
         // 磨砂大卡（与其他页的卡片同一条 shader 路径：场 + 修正 + 颗粒），
         // 占满剩余高度，卡片内部自己滚（见 pages::view）。
-        card::card_fill(
-            column![toolbar, body]
-                .spacing(14)
-                .width(Fill)
-                .height(Fill),
-            pal,
+        crate::ui::reveal_at(
+            card::card_fill(
+                column![toolbar, body]
+                    .spacing(14)
+                    .width(Fill)
+                    .height(Fill),
+                pal,
+            ),
+            t,
+            crate::ui::anim::PAGE_SHIFT,
+            0.12,
         ),
     ]
     .spacing(GAP_SECTION)

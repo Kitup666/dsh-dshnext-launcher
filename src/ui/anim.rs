@@ -22,8 +22,9 @@ pub const PAGE: Key = "page";
 /// 不然会看出「内容先到、指示条后到」。语义同上：1 = 刚切、0 = 落定。
 pub const NAV: Key = "nav.switch";
 
-/// 切页入场时长。再短看不出换了页，再长点导航就觉得拖手。
-pub const PAGE_DUR: Duration = Duration::from_millis(190);
+/// 切页入场时长。280ms 容纳卡片错峰（motion-designer：页面转场 300–500ms 一档；
+/// 每张卡在自己的时间片里走完位移，总错峰封顶 ~140ms，末卡 ~400ms 收干净）。
+pub const PAGE_DUR: Duration = Duration::from_millis(280);
 
 /// 切页时内容上移的距离（逻辑像素）。14px 够看出方向，又不会让文字糊成一片。
 pub const PAGE_SHIFT: f32 = 14.0;

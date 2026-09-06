@@ -83,9 +83,14 @@ def instantiate(src: Path, axes: str) -> Path:
     font's default name ("Noto Sans SC Thin"), so Font::with_name can't tell
     Regular from SemiBold.
     """
-    dst = HERE / f"_static_{axes.replace('=', '')}_{src.stem}.ttf"
+    return instance(src, axes.split(","), HERE / f"_static_{axes.replace('=', '')}_{src.stem}.ttf")
+
+
+def instance(src: Path, axes: list[str], dst: Path) -> Path:
+    """instancer 要把每个轴单独传一个 AXIS=LOC 参数（"wght=400,wdth=112.5" 单串
+    会被当成一个轴的值解析失败）。"""
     run([
-        sys.executable, "-m", "fontTools.varLib.instancer", str(src), axes,
+        sys.executable, "-m", "fontTools.varLib.instancer", str(src), *axes,
         "--update-name-table",
         "--output", str(dst),
     ])
@@ -175,6 +180,28 @@ def main() -> None:
     mono = OUT / "CascadiaMono.subset.ttf"
     subset(mono_src, mono, base_codepoints(), "wght=400")
     set_family(mono, "Cascadia Mono", "Regular")
+
+    # Display 层（2026-09-07）：Martian Mono SemiExpanded——品牌名 / hero /
+    # overline / 统计数字的「机器声」（src/ui/mod.rs FONT_DISPLAY）。
+    # 变体源字体不入库，下载（gcore.jsdelivr 直连，同上面 Noto 的路子）：
+    #   curl -L -o tools/MartianMono-var.ttf "https://gcore.jsdelivr.net/gh/google/fonts@main/ofl/martianmono/MartianMono%5Bwdth,wght%5D.ttf"
+    mm_src = HERE / "MartianMono-var.ttf"
+    if mm_src.exists():
+        print("subsetting display Martian Mono (latin only; CJK falls back to sans)")
+        mm_reg = OUT / "MartianMono-Regular.subset.ttf"
+        mm_bold = OUT / "MartianMono-Bold.subset.ttf"
+        # wdth 钉在 112.5（SemiExpanded，它的签名宽度）；只有 ASCII，
+        # 中文字符由 cosmic-text 按脚本回落 Noto。
+        subset(instance(mm_src, ["wght=400", "wdth=112.5"], HERE / "_mm_400.ttf"),
+               mm_reg, base_codepoints(), None)
+        subset(instance(mm_src, ["wght=700", "wdth=112.5"], HERE / "_mm_700.ttf"),
+               mm_bold, base_codepoints(), None)
+        set_family(mm_reg, "Martian Mono", "Regular")
+        set_family(mm_bold, "Martian Mono", "Bold")
+        (HERE / "_mm_400.ttf").unlink(missing_ok=True)
+        (HERE / "_mm_700.ttf").unlink(missing_ok=True)
+    else:
+        print("MartianMono-var.ttf 不在，跳过 display 层（src/ui/mod.rs 会编译失败）")
 
     print("results:")
     for p in sorted(OUT.glob("*.ttf")):

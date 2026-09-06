@@ -45,16 +45,23 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         pal,
     );
 
-    widgets::page_stack(
-        head,
-        Column::new()
-            .push(appearance(app, pal))
-            .push(model_access(app, pal))
-            .push(launch_behavior(app, pal))
-            .push(sources(app, pal))
-            .push(about(app, pal)),
-    )
-    .into()
+    // 错峰入场：五张卡依次落位，每张迟 6%、封顶 30%。
+    let t = app.anim.value(crate::ui::anim::PAGE);
+    let cards = [
+        appearance(app, pal),
+        model_access(app, pal),
+        launch_behavior(app, pal),
+        sources(app, pal),
+        about(app, pal),
+    ];
+    let mut body = Column::new();
+    for (i, c) in cards.into_iter().enumerate() {
+        let d = (i as f32 * 0.06).min(0.30);
+        body = body.push(crate::ui::reveal_at(c, t, crate::ui::anim::PAGE_SHIFT, d));
+    }
+
+    widgets::page_stack(crate::ui::reveal_at(head, t, crate::ui::anim::PAGE_SHIFT, 0.0), body)
+        .into()
 }
 
 fn appearance<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {

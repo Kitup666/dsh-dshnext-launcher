@@ -3,9 +3,11 @@
 use crate::app::{Dshnext, Message, PluginTab};
 use crate::pages::home::row_btn;
 use crate::theme::{FS_BODY, FS_SMALL, FS_TINY, Palette};
+use crate::ui::anim::{self, PAGE_SHIFT};
 use crate::ui::button::{self, Size as BtnSize, Spec, Variant};
 use crate::ui::icon;
 use crate::ui::modal::Dialog;
+use crate::ui::reveal_at;
 use crate::ui::widgets::{self, Tone};
 use crate::ui::{card, mono, txt, txt_bold};
 use iced::widget::{container, Column, column, row, space};
@@ -21,11 +23,13 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
         pal,
     );
 
+    // 错峰入场：页头 → 工具条 → 列表卡，依次落位。
+    let t = app.anim.value(anim::PAGE);
     widgets::page_stack(
-        head,
+        reveal_at(head, t, PAGE_SHIFT, 0.0),
         Column::new()
-            .push(toolbar_card(app, pal))
-            .push(list_card(app, pal)),
+            .push(reveal_at(toolbar_card(app, pal), t, PAGE_SHIFT, 0.12))
+            .push(reveal_at(list_card(app, pal), t, PAGE_SHIFT, 0.24)),
     )
     .into()
 }
@@ -142,12 +146,26 @@ fn installed_list<'a>(
         .spacing(4);
 
     if shown.is_empty() {
-        let msg = if app.plugins.is_empty() {
-            "该版本还没安装任何插件。去「插件市场」挑一个，或用「手动安装」填 npm 包名 / github:owner/repo。"
-        } else {
-            "没有匹配的插件"
-        };
-        return col.push(widgets::empty(msg, pal));
+        if app.plugins.is_empty() {
+            // 完全空装：给图标圈 + 直达动作，一行灰字撑不起这张大卡。
+            let action = button::btn(
+                Spec::new("plg.tab.market", "浏览插件市场", Variant::Accent)
+                    .size(BtnSize::Small),
+                pal,
+                &app.anim,
+                Some(Message::SetPluginTab(PluginTab::Market)),
+                Some(Message::HoverEnter("plg.tab.market")),
+                Some(Message::HoverExit("plg.tab.market")),
+            );
+            return col.push(widgets::empty_state(
+                icon::PLUGINS,
+                "还没有安装插件",
+                "去插件市场挑一个，或用「手动安装」填 npm 包名 / github:owner/repo。",
+                Some(action),
+                pal,
+            ));
+        }
+        return col.push(widgets::empty("没有匹配的插件", pal));
     }
 
     for (i, p) in shown.iter().enumerate() {
@@ -203,12 +221,17 @@ fn market_list<'a>(app: &'a Dshnext, q: &str, pal: &'static Palette) -> Column<'
         .spacing(4);
 
     if shown.is_empty() {
-        let msg = if app.market_loaded {
-            "没有匹配的插件。"
-        } else {
-            "点上方「插件市场」加载列表。"
-        };
-        return col.push(widgets::empty(msg, pal));
+        if app.market_loaded {
+            return col.push(widgets::empty("没有匹配的插件。", pal));
+        }
+        // 市场还没加载：图标圈 + 讲清楚怎么加载。
+        return col.push(widgets::empty_state(
+            icon::MARKET,
+            "市场列表还没加载",
+            "点上方「插件市场」分页加载来自 npm 的社区插件。",
+            None,
+            pal,
+        ));
     }
 
     let installed: Vec<&str> = app.plugins.iter().map(|p| p.name.as_str()).collect();
