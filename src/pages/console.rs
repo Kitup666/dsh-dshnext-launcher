@@ -51,6 +51,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
             pal
         ),
         widgets::check("自动滚动", app.auto_scroll, Message::ToggleAutoScroll, pal),
+        widgets::check("只看错误", app.errors_only, Message::ToggleErrorsOnly, pal),
         widgets::tag(format!("{total} 行"), Tone::Neutral, pal),
         space::horizontal(),
         tool_btn(
@@ -162,13 +163,29 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     .into()
 }
 
-/// 当前过滤下可见的日志。
+/// 当前过滤下可见的日志（「只看错误」时再筛一层）。
 fn visible(app: &Dshnext) -> impl Iterator<Item = &crate::app::LogLine> {
     let all = app.log_filter == ALL;
     let filter = app.log_filter.clone();
+    let eo = app.errors_only;
     app.logs
         .iter()
-        .filter(move |l| all || l.profile == filter)
+        .filter(move |l| (all || l.profile == filter) && (!eo || is_errorish(l)))
+}
+
+/// 错误行判定：stderr 流一律算，其余按关键词（大小写不敏感，含中文）。
+/// 着色与「只看错误」共用这一个口径，别搞两套。
+pub fn is_errorish(l: &crate::app::LogLine) -> bool {
+    if matches!(l.stream, LogStream::Stderr) {
+        return true;
+    }
+    let low = l.line.to_ascii_lowercase();
+    low.contains("error") || low.contains("panic") || low.contains("失败") || l.line.contains("错误")
+}
+
+fn is_warnish(l: &crate::app::LogLine) -> bool {
+    let low = l.line.to_ascii_lowercase();
+    low.contains("warn") || low.contains("deprecat") || l.line.contains("警告")
 }
 
 /// 供「复制」用的纯文本（格式与上一代一致）。
@@ -184,11 +201,17 @@ fn log_row<'a>(
     l: &'a crate::app::LogLine,
     pal: &'static Palette,
 ) -> Element<'a, Message> {
-    let color = match l.stream {
-        LogStream::Stdout => pal.text,
-        LogStream::Stderr => pal.bad,
-        LogStream::System => pal.accent,
-        LogStream::Plugin => pal.teal,
+    let color = if is_errorish(l) {
+        pal.bad
+    } else if is_warnish(l) {
+        pal.warn
+    } else {
+        match l.stream {
+            LogStream::Stdout => pal.text,
+            LogStream::Stderr => pal.bad,
+            LogStream::System => pal.accent,
+            LogStream::Plugin => pal.teal,
+        }
     };
     let mut r = row![mono(fmt_time(l.ts)).size(FS_MICRO).color(pal.text_3)].spacing(9);
     // 「全部来源」时标出归属，与上一代一致

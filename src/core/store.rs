@@ -47,6 +47,8 @@ pub struct Config {
     pub dsh_home: String,
     /// 上次关闭时的窗口几何，开窗恢复
     pub window: Option<WindowGeom>,
+    /// 最近一次 harness 启动耗时（Started→Url 毫秒），首页 meta 带上墙。
+    pub last_boot_ms: Option<u64>,
 }
 
 /// 本仓库的 Releases API 地址，内置更新源。发布 Release 时附上 dshnext.exe
@@ -84,6 +86,7 @@ impl Default for Config {
             auto_restart: false,
             dsh_home: String::new(),
             window: None,
+            last_boot_ms: None,
         }
     }
 }

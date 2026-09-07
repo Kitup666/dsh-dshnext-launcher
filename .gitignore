@@ -3,3 +3,6 @@ target/
 packaging/*.exe
 phase0/tools/MartianMono-var.ttf
 phase0/tools/__pycache__/
+
+# ZCode 会话产物（计划/缓存），不入库
+.zcode/

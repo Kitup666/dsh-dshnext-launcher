@@ -61,7 +61,8 @@ impl Dshnext {
                     ));
                 }
                 // 托盘要在主线程建（TrayIcon !Send），Opened 正是主线程 update。
-                if self.config.tray {
+                // --minimized 静默自启时强制挂：窗口不可见又没托盘就找不回来了。
+                if self.config.tray || self.minimized_start {
                     crate::tray::ensure();
                 }
                 // 首启引导的淡入（复用 "modal" 补间；同一时间只有一层浮层）。
@@ -791,6 +792,8 @@ impl Dshnext {
                 match result {
                     Ok((profile, url)) => {
                         self.crash_restarts.remove(&profile);
+                        // 启动耗时锚点：Started（进程已 spawn）→ Url（WebUI 就绪）。
+                        self.boot_at.insert(profile.clone(), Instant::now());
                         self.notify(ToastKind::Info, format!("正在启动 {profile}…"));
                         let mut tasks = vec![Task::done(Message::PollProcs)];
                         let is_e2e = std::env::args().any(|a| a == "--e2e");
@@ -1045,6 +1048,10 @@ impl Dshnext {
                 self.auto_scroll = v;
                 Task::none()
             }
+            Message::ToggleErrorsOnly(v) => {
+                self.errors_only = v;
+                Task::none()
+            }
             Message::ClearLogs => {
                 self.logs.clear();
                 Task::none()
@@ -1058,6 +1065,11 @@ impl Dshnext {
                         format!("已复制 {n} 行日志"),
                     )))
             }
+            Message::CopyWebUrl(url) => iced::clipboard::write::<Message>(url)
+                .chain(Task::done(Message::Notify(
+                    ToastKind::Ok,
+                    "已复制 WebUI 地址（含 token）".to_string(),
+                ))),
 
             // ---------- 设置 ----------
             Message::CfgApiKey(v) => {
@@ -1494,10 +1506,27 @@ impl Dshnext {
             CoreEvent::Url { profile, url } => {
                 self.urls.insert(profile.clone(), url.clone());
                 self.sys_log(&profile, format!("WebUI 地址：{url}"));
+                let mut tasks: Vec<Task<Message>> = Vec::new();
+                // 启动耗时落表：Started→Url 的毫秒差写进 config，首页 meta 上墙。
+                // 静默保存（失败不值得打扰用户）。
+                if let Some(t0) = self.boot_at.remove(&profile) {
+                    self.config.last_boot_ms = Some(t0.elapsed().as_millis() as u64);
+                    let cfg = self.config.clone();
+                    tasks.push(Task::perform(
+                        async move {
+                            let _ = tokio::task::spawn_blocking(move || {
+                                crate::core::store::save(&cfg)
+                            })
+                            .await;
+                        },
+                        |_| Message::Noop,
+                    ));
+                }
                 // 带 token 的地址到了，兑现等着的自动打开。
                 if self.pending_open.remove(&profile).is_some() {
-                    return Task::done(Message::OpenWebUi(url));
+                    tasks.push(Task::done(Message::OpenWebUi(url)));
                 }
+                return Task::batch(tasks);
             }
             CoreEvent::Exit { profile, code } => {
                 self.sys_log(&profile, format!("进程已退出（退出码 {code}）"));
@@ -1634,7 +1663,7 @@ impl Dshnext {
         {
             subs.push(window::frames().map(Message::Tick));
         }
-        if self.config.tray {
+        if self.config.tray || self.minimized_start {
             subs.push(crate::tray::events().map(Message::Tray));
         }
         if !self.procs.is_empty() {

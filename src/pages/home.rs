@@ -227,9 +227,26 @@ fn meta_strip<'a>(
         .into(),
         pal,
     );
+    // 启动耗时：上次 Started→Url 的毫秒差（config 持久，跨重启可见）。
+    let boot = match app.config.last_boot_ms {
+        Some(ms) if ms >= 1000 => format!("{}.{:01} s", ms / 1000, (ms % 1000) / 100),
+        Some(ms) => format!("{ms} ms"),
+        None => DASH.into(),
+    };
+    let cell_boot = meta_cell(
+        "启动耗时",
+        disp(boot).size(FS_BODY).color(pal.text).into(),
+        pal,
+    );
     // 机器值（地址/PID/计数）统一走 display 等宽——Martian 的数字天然等宽，
     // 且与 hero 同一声部；路径、日志仍归 Cascadia（console/表单）。
-    let cell_addr = meta_cell("WEB 地址", disp(addr).size(FS_BODY).color(addr_color).into(), pal);
+    // WEB 地址可点：复制带 token 的完整链接（没有 token 时复制裸地址）。
+    let copy_url = app
+        .url_of(app.selected.as_str())
+        .unwrap_or_else(|| format!("http://{addr}"));
+    let addr_el = iced::widget::mouse_area(disp(addr).size(FS_BODY).color(addr_color))
+        .on_press(Message::CopyWebUrl(copy_url));
+    let cell_addr = meta_cell("WEB 地址（点复制）", addr_el.into(), pal);
     let cell_pid = meta_cell(
         "进程 PID",
         match running {
@@ -248,13 +265,13 @@ fn meta_strip<'a>(
     // 份额装不下内容，WEB 地址和 PID 直接叠字（截图实测）。
     if narrow {
         column![
-            row![cell_status, cell_uptime, cell_plugins].spacing(24),
-            row![cell_addr, cell_pid].spacing(24),
+            row![cell_status, cell_uptime, cell_boot].spacing(24),
+            row![cell_addr, cell_pid, cell_plugins].spacing(24),
         ]
         .spacing(14)
         .into()
     } else {
-        row![cell_status, cell_uptime, cell_addr, cell_pid, cell_plugins]
+        row![cell_status, cell_uptime, cell_boot, cell_addr, cell_pid, cell_plugins]
             .spacing(24)
             .align_y(Alignment::Start)
             .into()

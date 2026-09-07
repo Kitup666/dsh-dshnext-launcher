@@ -36,7 +36,8 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
             "/t",
             "REG_SZ",
             "/d",
-            &format!("\"{}\"", exe.display()),
+            // 开机自启静默进托盘（--minimized），不弹主窗挡用户干活。
+            &format!("\"{}\" --minimized", exe.display()),
             "/f",
         ])
         .map(|_| ())

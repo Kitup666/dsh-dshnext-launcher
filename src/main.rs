@@ -164,6 +164,9 @@ fn main() -> iced::Result {
     };
 
     let e2e = flag("--e2e");
+    // --minimized：静默自启——建窗不可见、强制挂托盘（开机自启的 Run 键带这个
+    // 旗标）。--shot 出图必须可见，二者互斥时以出图为准。
+    let minimized = flag("--minimized") && shot.is_none();
     // --switch-to <页> [--switch-at 毫秒]：开窗后自动切页，用来把 --shot 的快门
     // 卡在切页动画中间（单靠 --after 只能截到落定态）。
     let switch = opt("--switch-to").map(|name| {
@@ -185,6 +188,7 @@ fn main() -> iced::Result {
             let mut app = Dshnext::new(mode, shot.clone(), autotest, e2e);
             app.page = start_page;
             app.switch = switch;
+            app.minimized_start = minimized;
             if force_onboarding {
                 app.onboarding = Some(app::Onboarding::new());
             }
@@ -251,6 +255,8 @@ fn main() -> iced::Result {
             ..Default::default()
         },
         min_size: Some(iced::Size::new(880.0, 560.0)),
+        // --minimized：静默启动，窗口不显示（托盘在 Opened 里强制挂上）。
+        visible: !minimized,
         ..Default::default()
     })
     .theme(theme_of)

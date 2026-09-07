@@ -240,6 +240,14 @@ pub struct Dshnext {
     /// `pages::console::ALL` 或某个 profile 名。
     pub log_filter: String,
     pub auto_scroll: bool,
+    /// 「只看错误」开关：过滤掉非错误行（见 console::is_errorish）。
+    pub errors_only: bool,
+
+    // ---- 启动耗时 ----
+    /// profile → Started 时刻；CoreEvent::Url 到达时算差值写进 config。
+    pub boot_at: HashMap<String, Instant>,
+    /// --minimized 静默自启：建窗不可见 + 强制挂托盘（否则窗口找不回来）。
+    pub minimized_start: bool,
 
     // ---- 设置页 ----
     /// 编辑草稿；点保存才写回 config 并落盘（上一代同样的 dirty 机制）。
@@ -409,8 +417,11 @@ pub enum Message {
     // 控制台
     SetLogFilter(String),
     ToggleAutoScroll(bool),
+    ToggleErrorsOnly(bool),
     ClearLogs,
     CopyLogs,
+    /// 首页点 WEB 地址：复制带 token 的完整链接（没有则复制裸地址）。
+    CopyWebUrl(String),
 
     // 设置
     /// 托盘事件（显示/退出）。
@@ -516,6 +527,9 @@ impl Dshnext {
 
             log_filter: crate::pages::console::ALL.to_string(),
             auto_scroll: true,
+            errors_only: false,
+            boot_at: HashMap::new(),
+            minimized_start: false,
 
             show_key: false,
         }

@@ -820,3 +820,39 @@ fn app_window_toggle_syncs_config_and_draft() {
     drop(a.update(Message::SetAppWindow(false)));
     assert!(!a.config.app_window && !a.cfg_draft.app_window);
 }
+
+#[test]
+fn errors_only_filters_console() {
+    use crate::core::event::LogStream;
+    let mut a = seeded_app();
+    a.push_log("demo".into(), LogStream::Stdout, "正常输出行".into(), 1);
+    a.push_log("demo".into(), LogStream::Stderr, "boom".into(), 2);
+    a.push_log("demo".into(), LogStream::Stdout, "Error: 炸了".into(), 3);
+    // 默认全看
+    let all = crate::pages::console::visible_text(&a);
+    assert_eq!(all.lines().count(), 3);
+    // 只看错误：stderr + 含 error 关键词的行
+    drop(a.update(Message::ToggleErrorsOnly(true)));
+    let only = crate::pages::console::visible_text(&a);
+    assert_eq!(only.lines().count(), 2, "应只剩两条错误：{only}");
+    assert!(only.contains("boom") && only.contains("炸了"));
+    assert!(!only.contains("正常输出行"));
+}
+
+#[test]
+fn boot_ms_recorded_on_url() {
+    // Started→Url 的毫秒差写进 config.last_boot_ms（首页上墙 + 持久）。
+    let mut a = seeded_app();
+    assert!(a.config.last_boot_ms.is_none());
+    drop(a.update(Message::Started(Ok((
+        "demo".into(),
+        "http://127.0.0.1:3080".into(),
+    )))));
+    assert!(a.boot_at.contains_key("demo"), "Started 应记锚点");
+    drop(a.update(Message::Core(CoreEvent::Url {
+        profile: "demo".into(),
+        url: "http://127.0.0.1:3080/?token=x".into(),
+    })));
+    assert!(a.config.last_boot_ms.is_some(), "Url 到达应算出耗时");
+    assert!(!a.boot_at.contains_key("demo"), "锚点用完即弃");
+}
