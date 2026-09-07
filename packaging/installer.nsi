@@ -11,7 +11,7 @@
 !define APP_NAME    "DshDesk Native"
 !define APP_ID      "Dshnext"
 !define APP_EXE     "dshnext.exe"
-!define APP_VERSION "0.1.8"
+!define APP_VERSION "0.1.9"
 !define UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
 
 Unicode true

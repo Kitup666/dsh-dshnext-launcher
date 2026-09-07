@@ -39,6 +39,7 @@ pub struct Actions<Message> {
 pub fn brand_cell<'a, Message: Clone + 'a>(
     brand: Element<'a, Message>,
     drag: Message,
+    double_click: Message,
 ) -> Element<'a, Message> {
     mouse_area(
         container(brand)
@@ -48,6 +49,7 @@ pub fn brand_cell<'a, Message: Clone + 'a>(
             .align_y(Alignment::Center),
     )
     .on_press(drag)
+    .on_double_click(double_click)
     .into()
 }
 
@@ -68,13 +70,14 @@ pub fn titlebar<'a, Message: Clone + 'a>(
         close,
     } = actions;
 
-    // 可拖动区：整条空白都能抓。
+    // 可拖动区：整条空白都能抓；双击最大化走 iced 原生 on_double_click。
     let grab = mouse_area(
         container(space::Space::new())
             .height(Fill)
             .width(Fill),
     )
-    .on_press(drag);
+    .on_press(drag)
+    .on_double_click(toggle_maximize.clone());
 
     let buttons = row![
         win_btn("win.min", Glyph::Minimize, pal, anim, minimize, hover, unhover, false),

@@ -113,6 +113,8 @@ impl Dshnext {
             }
             Message::DragWindow => match self.window {
                 // 交给系统（WM_NCLBUTTONDOWN + HTCAPTION），比自算 delta 跟手。
+                // 双击最大化走 titlebar 的原生 on_double_click（→ ToggleMaximize），
+                // 不在这里做计时——window::drag 的模态循环会吞掉第二击。
                 Some(id) => window::drag(id),
                 None => Task::none(),
             },

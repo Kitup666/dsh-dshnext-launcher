@@ -358,7 +358,7 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
     });
 
     column![
-        titlebar::brand_cell(brand(pal), Message::DragWindow),
+        titlebar::brand_cell(brand(pal), Message::DragWindow, Message::ToggleMaximize),
         body,
     ]
     .width(Length::Fixed(232.0))
