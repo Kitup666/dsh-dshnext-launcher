@@ -1,6 +1,6 @@
 [package]
 name = "dshnext"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "DshDesk — DeepSeek Harness 启动器（原生 Rust 重写，iced 0.14）"
 
