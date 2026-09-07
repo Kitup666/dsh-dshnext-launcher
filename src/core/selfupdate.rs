@@ -10,6 +10,16 @@
 //! 落到原位）→ 提示重启。下次启动顺手删 .old。
 
 use serde::Deserialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// 下载进度（字节）：流式下载时逐块更新，UI 轮询显示进度条。
+static DL_DONE: AtomicU64 = AtomicU64::new(0);
+static DL_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// (已下载, 总大小)。总大小 0 = 服务端没给 content-length（进度条走不定长态）。
+pub fn download_progress() -> (u64, u64) {
+    (DL_DONE.load(Ordering::Relaxed), DL_TOTAL.load(Ordering::Relaxed))
+}
 
 #[derive(Debug, Clone)]
 pub struct UpdateInfo {
@@ -73,20 +83,35 @@ pub async fn latest(api_url: String) -> Result<UpdateInfo, String> {
     })
 }
 
-/// 下载到 `dest`。
+/// 下载到 `dest`，流式逐块上报字节进度（供 UI 进度条）。
 pub async fn download_to(url: &str, dest: &std::path::Path) -> Result<(), String> {
-    let bytes = reqwest::get(url)
+    use futures_util::StreamExt;
+    let client = reqwest::Client::builder()
+        .user_agent("DshDesk")
+        // 22 MB 走代理可能十几秒，给足；卡死由这个超时兜底。
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(url)
+        .send()
         .await
         .map_err(|e| format!("下载失败：{e}"))?
         .error_for_status()
-        .map_err(|e| format!("下载失败：{e}"))?
-        .bytes()
-        .await
         .map_err(|e| format!("下载失败：{e}"))?;
+    DL_TOTAL.store(resp.content_length().unwrap_or(0), Ordering::Relaxed);
+    DL_DONE.store(0, Ordering::Relaxed);
+    let mut buf: Vec<u8> = Vec::with_capacity(DL_TOTAL.load(Ordering::Relaxed) as usize);
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("下载失败：{e}"))?;
+        buf.extend_from_slice(&chunk);
+        DL_DONE.store(buf.len() as u64, Ordering::Relaxed);
+    }
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    std::fs::write(dest, &bytes).map_err(|e| e.to_string())
+    std::fs::write(dest, &buf).map_err(|e| e.to_string())
 }
 
 /// 下载文本（.sha256 资产用）。

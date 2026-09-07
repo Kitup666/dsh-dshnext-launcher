@@ -248,6 +248,8 @@ pub struct Dshnext {
     pub boot_at: HashMap<String, Instant>,
     /// --minimized 静默自启：建窗不可见 + 强制挂托盘（否则窗口找不回来）。
     pub minimized_start: bool,
+    /// 正在下载更新：驱动设置页进度条与心跳订阅（进度字节见 selfupdate::download_progress）。
+    pub update_busy: bool,
 
     // ---- 设置页 ----
     /// 编辑草稿；点保存才写回 config 并落盘（上一代同样的 dirty 机制）。
@@ -430,6 +432,8 @@ pub enum Message {
     CheckUpdate,
     UpdateChecked(Result<crate::core::selfupdate::UpdateInfo, String>),
     UpdateReady(Result<(String, std::path::PathBuf), String>),
+    /// 下载期心跳：只为触发重绘读进度全局，本身无副作用。
+    UpdateTick,
     /// 导出脱敏诊断文件（设置页「关于」卡）。
     ExportDiag,
     DiagExported(Result<std::path::PathBuf, String>),
@@ -530,6 +534,7 @@ impl Dshnext {
             errors_only: false,
             boot_at: HashMap::new(),
             minimized_start: false,
+            update_busy: false,
 
             show_key: false,
         }

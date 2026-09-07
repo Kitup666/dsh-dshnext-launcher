@@ -856,3 +856,16 @@ fn boot_ms_recorded_on_url() {
     assert!(a.config.last_boot_ms.is_some(), "Url 到达应算出耗时");
     assert!(!a.boot_at.contains_key("demo"), "锚点用完即弃");
 }
+
+#[test]
+fn update_progress_renders_on_settings() {
+    // 下载期设置页要渲染出进度块（update_busy 门控），否则用户看不到反馈。
+    let mut a = seeded_app();
+    a.page = Page::Settings;
+    assert!(!has_text(&a, "已下载 0 MB…"), "非下载期不显示进度");
+    a.update_busy = true;
+    a.busy = Some("正在下载更新 v9.9.9…".into());
+    // iced_test 的 &str 选择器是精确相等（AGENTS 坑 21），用完整串。
+    assert!(has_text(&a, "正在下载更新 v9.9.9…"), "下载期应显示 busy 文案");
+    assert!(has_text(&a, "已下载 0 MB…"), "total=0 时走不定长文案");
+}

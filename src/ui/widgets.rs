@@ -268,6 +268,51 @@ pub fn busy<'a, Message: 'a>(
     .into()
 }
 
+/// 确定进度条（0..=1）。轨道 surface_2、填充 accent，高 6px 圆角胶囊。
+/// 用 FillPortion 整数比例分段，避免自算像素宽度。
+pub fn progress<'a, Message: 'a>(
+    frac: f32,
+    pal: &'static Palette,
+) -> Element<'a, Message> {
+    let f = frac.clamp(0.0, 1.0);
+    let done = ((f * 1000.0) as u16).max(1); // 至少 1，0% 时也能看见起点
+    let rest = 1000u16.saturating_sub(done);
+    let h = 6.0;
+    let fill = container(space::horizontal()).width(Length::FillPortion(done)).height(h).style(
+        move |_t: &Theme| container::Style {
+            text_color: None,
+            background: Some(pal.accent.into()),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 3.0.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        },
+    );
+    let mut r = row![fill];
+    if rest > 0 {
+        r = r.push(
+            container(space::horizontal())
+                .width(Length::FillPortion(rest))
+                .height(h)
+                .style(move |_t: &Theme| container::Style {
+                    text_color: None,
+                    background: Some(pal.surface_2.into()),
+                    border: Border {
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: 3.0.into(),
+                    },
+                    shadow: Shadow::default(),
+                    snap: true,
+                }),
+        );
+    }
+    container(r.spacing(0)).width(Fill).into()
+}
+
 /// 表单字段：标签 + 控件 + 提示（CSS `.field` / `.field-label` / `.field-hint`）。
 pub fn field<'a, Message: 'a>(
     label: impl IntoFragment<'a>,

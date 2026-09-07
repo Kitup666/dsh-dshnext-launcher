@@ -345,6 +345,7 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
                 ]
                 .spacing(10),
             )
+            .push(update_progress(app, pal))
             .push(space::vertical().height(4.0))
             .push(
                 txt("单文件绿色版，无需安装运行时。")
@@ -355,4 +356,38 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
             .width(Fill),
         pal,
     )
+}
+
+/// 更新下载进度条：仅 `update_busy` 时占位显示，读 selfupdate 的字节进度全局。
+/// 服务端没给 content-length（total=0）时退化为「已下载 N MB」不定长文案。
+fn update_progress<'a>(app: &Dshnext, pal: &'static Palette) -> Element<'a, Message> {
+    if !app.update_busy {
+        return space::vertical().height(0.0).into();
+    }
+    let (done, total) = crate::core::selfupdate::download_progress();
+    let mb = |b: u64| b as f64 / 1_048_576.0;
+    let (frac, label) = if total > 0 {
+        (
+            done as f32 / total as f32,
+            format!("{} / {} MB（{}%）", mb(done), mb(total), (frac_pct(done, total))),
+        )
+    } else {
+        (0.0, format!("已下载 {} MB…", mb(done)))
+    };
+    column![
+        row![
+            widgets::busy(app.busy.clone().unwrap_or_else(|| "正在下载更新…".into()), pal),
+            space::horizontal(),
+            txt(label).size(FS_TINY).color(pal.text_3),
+        ]
+        .align_y(Alignment::Center)
+        .width(Fill),
+        widgets::progress(frac, pal),
+    ]
+    .spacing(8)
+    .into()
+}
+
+fn frac_pct(done: u64, total: u64) -> u32 {
+    if total == 0 { 0 } else { (done * 100 / total) as u32 }
 }

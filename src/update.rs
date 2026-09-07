@@ -280,6 +280,7 @@ impl Dshnext {
                 Ok(info) => {
                     if crate::core::selfupdate::newer(&info.version, env!("CARGO_PKG_VERSION")) {
                         self.busy = Some(format!("正在下载更新 v{}…", info.version));
+                        self.update_busy = true;
                         Task::perform(
                             async move {
                                 let tmp =
@@ -315,6 +316,7 @@ impl Dshnext {
             },
             Message::UpdateReady(result) => {
                 self.busy = None;
+                self.update_busy = false;
                 match result {
                     Ok((version, path)) => {
                         // 换身是本地文件操作，同步做掉（快），成败都明确告知。
@@ -333,6 +335,7 @@ impl Dshnext {
                     }
                 }
             }
+            Message::UpdateTick => Task::none(),
             Message::Tray(crate::tray::TrayEvent::Show) => {
                 crate::tray::show_window();
                 Task::none()
@@ -1679,6 +1682,10 @@ impl Dshnext {
             // 目录转移进度心跳。复制是大批量小文件，120ms 刷新一次足够顺滑，
             // 也不至于把 update 日志/重绘打爆。
             subs.push(iced::time::every(Duration::from_millis(120)).map(|_| Message::MigrateTick));
+        }
+        if self.update_busy {
+            // 更新下载心跳：120ms 读一次进度全局刷进度条（同迁移的节流）。
+            subs.push(iced::time::every(Duration::from_millis(120)).map(|_| Message::UpdateTick));
         }
         // 环境光漂移的心跳（AmbientTick）已随背景冻结一起拆掉（2026-09-06）：
         // 用户看了几天说「反正也看不出来在动」，空闲零出帧纪律恢复。
