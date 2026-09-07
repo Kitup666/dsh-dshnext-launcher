@@ -4,8 +4,8 @@
 > 每条事实标 `OBSERVED`（源码直接可证）/ `DOCUMENTED`（有文档但未复核）/ `INFERRED`（由证据推断）/ `UNKNOWN`。
 > **本文档是活的架构地图，架构改动后同步更新**；DESIGN.md 是设计决策与阶段日志，两者分工不同。
 
-- **快照身份**：branch master，HEAD `2e90fe3`（HANDOFF.md 提交）；工作树仅 AGENTS.md 未提交修改（代理条目更新，不影响代码）。
-- **快照日期**：2026-09-06
+- **快照身份**：branch master；本文快照写于 2026-09-06（HEAD `2e90fe3` 前后），其后追加：目录迁移 + 进度条、runtime 守卫 + 单实例互斥、「停止并继续」、NSIS 重打（详见 git log 与 DECISIONS.md）。行数/Message 数等精确数字以该日快照为准。
+- **快照日期**：2026-09-06（更新 2026-09-07）
 - **规模**：`src/` 共 8628 行 Rust；`core/` 1255 行（复用自上一代）；单 crate、单 exe。
 
 ---
@@ -138,4 +138,4 @@ OBSERVED（`frosted.rs` 头注释、`glass_pipeline.rs:465`、`pages/mod.rs:121-
 - 行数：`wc -l src/**/*.rs`（2026-09-06）
 - 布局：`src/pages/mod.rs` view()/sidebar()；常量：`src/ui/titlebar.rs:20-24`
 - CLI 全集：`src/main.rs:3-9`；启动任务批：`src/update.rs` `Message::Opened` 分支
-- 帏幕/玻璃约定另见：AGENTS.md 坑 31/32、`HANDOFF.md`、记忆 `dshnext-frosted-grain-glass.md`
+- 帏幕/玻璃约定另见：AGENTS.md 坑 31/32/33、记忆 `dshnext-frosted-grain-glass.md`

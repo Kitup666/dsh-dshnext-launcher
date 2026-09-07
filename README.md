@@ -48,34 +48,34 @@ cargo run --release -- --page home --switch-to settings --switch-at 4000 --shot 
 
 ## 打包
 
-- **单 exe（推荐，绿色版）**：`cargo build --release` → `target/release/dshnext.exe`（17.32 MB，零运行时依赖，拷走即用）。
+- **单 exe（推荐，绿色版）**：`cargo build --release` → `target/release/dshnext.exe`（22.3 MB，零运行时依赖，拷走即用）。
   `.cargo/config.toml` 里已固化 `-C target-feature=+crt-static`：默认 MSVC 构建会动态依赖 `VCRUNTIME140.dll`（VC++ 运行库，干净机器上没有），静态链 CRT 后 `dumpbin /DEPENDENTS` 只剩 kernel32/user32/gdi32 这类系统 DLL——这才是真正的「零运行时依赖」。
-- **NSIS 安装包（可选）**：`packaging/installer.nsi`，用 `makensis` 编译 → `packaging/Dshnext_0.1.0_x64-setup.exe`（6.50 MB，lzma 压到 37%）。每用户安装（`$LOCALAPPDATA\Programs\Dshnext`，免管理员），带开始菜单项与卸载器。注册表标识用 `Dshnext` 与上一代的 `DshDesk` 分开，避免互相覆盖卸载项。安装包不入库（`.gitignore` 里 `packaging/*.exe`），需要时现编。
+- **NSIS 安装包（可选）**：`packaging/installer.nsi`，用 `makensis` 编译 → `packaging/Dshnext_0.1.0_x64-setup.exe`（9.0 MB，lzma 压到 40%）。每用户安装（默认 `$LOCALAPPDATA\Programs\Dshnext`，免管理员），带开始菜单项与卸载器。注册表标识用 `Dshnext` 与上一代的 `DshDesk` 分开，避免互相覆盖卸载项。安装包不入库（`.gitignore` 里 `packaging/*.exe`），需要时现编。
   装卸一圈实测过：`setup /S /D=<目录>` 后包内 exe 与 `target/release` 的 SHA-256 相同，卸载后安装目录、开始菜单项、注册表卸载项全部消失。
 
 ## 出图与对照
 
-- 六页 × 明暗：`shots/p5-<页面>-{dark,light}.png`（阶段 4 的那批留在 `p4-*`）
-- **与上一代并排对比**：`shots/compare-p5/<页面>.png`（左 Tauri、右 Dshnext，六页齐全；`python tools/make-compare.py --gen p5` 重出）
-- 切页动画取证：`shots/anim/{t075,t035,settled}.png`（同一次过渡的三个时刻）
-- 暗色精修依据：`shots/compare-orevx.png`；设计全文：[DESIGN.md](DESIGN.md)
-- 阶段 0 探针与测量脚本：`phase0/`（保留，性能回归用；每次改动重跑 `phase0/tools/measure-idle.ps1`）
+- 出图走程序自带开关：`dev.bat -- --page env --shot out.png --after 4000`（六页 × 明暗，`--theme` 切换）。
+- **与上一代并排对比**：`python tools/make-compare.py [--gen p5]`——素材是第一代 Tauri 的截图，已随目录重构删除，对照图只在 git 历史里（`shots/compare-p5/`）。
+- 切页动画取证：`--switch-to <页> --switch-at <毫秒>` 与 `--after` 的差值即快门落点（DESIGN.md §7）。
+- 阶段 0 探针与测量脚本：`phase0/`（保留，性能回归用；每次改动重跑 `phase0/tools/measure-idle.ps1`）。
 
 ## 目录
 
 ```
 phase0/       阶段 0 探针工程 + 实测报告 + 测量脚本（保留，用于性能回归）
-src/main.rs   入口：DX12 限定 + 字体加载 + --shot/--autotest/--drawlog/--e2e/--switch-to
-src/app.rs    顶层 State/Message
+src/main.rs   入口：Vulkan 限定 + 字体加载 + --shot/--autotest/--drawlog/--e2e/--switch-to/--migrate-to
+src/app.rs    顶层 State/Message（含 RuntimeOp 守卫与目录引导状态）
 src/update.rs 全部状态迁移 + subscription（空闲零订阅）
-src/tests.rs  iced_test 用例（view↔update 契约，14 例）
+src/tests.rs  iced_test 用例（view↔update 契约 + 迁移/守卫，28 例）
 src/bridge.rs core 与 iced 的桥：channel / ProcMap 全局持有 + Subscription 事件流
 src/theme.rs  设计令牌：两套配色 + 字号阶梯 + 圆角/节奏/阴影两档层级
-src/ui/       通用组件：anim/button/card/icon/modal/reveal/titlebar/widgets
-src/core/     从上一代复制的后端（业务逻辑不改 + 新增 event.rs）
+src/ui/       通用组件：anim/button/card/icon/modal/reveal/titlebar/widgets/glass_pipeline
+src/core/     从上一代复制的后端（业务逻辑不改 + 新增 event.rs/migrate.rs/selfupdate.rs）
 src/pages/    六个页面
-assets/       图标（10 个 svg）、内嵌字体（4.34 MB）
+assets/       图标（svg + ico）、内嵌字体、颗粒纹理
 packaging/    NSIS 安装包脚本
+docs/         现状架构快照 + 决策记录指引
 ```
 
 ## 与上一代的差异

@@ -170,7 +170,7 @@ iced 侧用 `Subscription::run` 把 channel 接收端变成消息流，事件直
 
 ### 需要重写的部分
 
-`commands.rs`（Tauri 的 22 个 `#[tauri::command]`）**整体废弃**，改为 iced 的 `Task::perform(async_fn, Message::Done)`。旧文件留在 `docs/commands.rs.tauri-reference` 供对照，确保功能不漏。
+`commands.rs`（Tauri 的 22 个 `#[tauri::command]`）**整体废弃**，改为 iced 的 `Task::perform(async_fn, Message::Done)`。（对照用的 `docs/commands.rs.tauri-reference` 碎片已随清理删除，对照看 git 历史第一代 `src-tauri/src`。）
 
 进程树清理（`taskkill /PID /T /F`）与 `CREATE_NO_WINDOW`（`0x0800_0000`）标志原样保留——这两个是 Windows 上的必需品，跟 UI 框架无关。
 
@@ -185,12 +185,10 @@ iced 是 Elm 架构：`State → view() → Element → 用户操作 → Message
 ```
 仓库根（原 Dshnext/，第一代删除后提升为根）
 ├── DESIGN.md                   # 设计决策与阶段日志（本文档）
-├── HANDOFF.md                  # 上下文交接：可调参数表、shader 约定
+├── DECISIONS.md                # 产品决策记录（拍板项与结论）
 ├── AGENTS.md                   # 踩坑纪律（给接手的 agent）
 ├── docs/
-│   ├── architecture/current-state.md   # 现状架构快照（活的架构地图）
-│   ├── commands.rs.tauri-reference
-│   └── Cargo.toml.tauri-reference
+│   └── architecture/current-state.md   # 现状架构快照（活的架构地图）
 ├── assets/
 │   ├── icons/                  # app.ico/master.png/window-64.rgba：应用图标；*.svg：界面图标
 │   └── fonts/                  # 内嵌字体，见 §6
