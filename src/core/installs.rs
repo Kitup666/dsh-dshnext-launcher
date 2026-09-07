@@ -58,7 +58,10 @@ fn npm_cmd(cfg: &Config) -> std::process::Command {
     };
     cmd.env("PATH", child_path());
     if !cfg.npm_registry.trim().is_empty() {
-        cmd.arg(format!("--registry {}", cfg.npm_registry.trim()));
+        // 必须用 `--registry=<url>` 等号形式：带空格的 `--registry <url>` 经
+        // `cmd /C` 会被整体加引号，npm 解析器拆坏它（registry 不生效、install
+        // 被误当位置参数）。等号形式是单 token，无歧义。
+        cmd.arg(format!("--registry={}", cfg.npm_registry.trim()));
     }
     cmd
 }

@@ -312,6 +312,7 @@ fn sidebar<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
         .spacing(8)
         .align_y(Alignment::Center)
         .width(Fill),
+        foot_row("Dshnext", env!("CARGO_PKG_VERSION").to_string(), pal),
         foot_row(
             "dsh",
             app.env
