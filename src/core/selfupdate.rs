@@ -32,9 +32,27 @@ struct Asset {
 
 /// 查最新版。找不到 exe 资产、网络失败都返回 Err。
 pub async fn latest(api_url: String) -> Result<UpdateInfo, String> {
-    let rel: Release = reqwest::get(api_url)
+    // reqwest 默认不发 User-Agent，GitHub API 对无 UA 请求直接 403。
+    let client = reqwest::Client::builder()
+        .user_agent("DshDesk")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&api_url)
+        .send()
         .await
-        .map_err(|e| format!("请求更新源失败：{e}"))?
+        .map_err(|e| format!("请求更新源失败：{e}"))?;
+    let status = resp.status();
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+    {
+        // 匿名限额 60 次/小时按**出口 IP** 计——共享出口（代理/机场/NAT）
+        // 的机器自己没发几个请求也可能被别人打满。等一小时窗口重置即可。
+        return Err(format!(
+            "GitHub 暂时限制了更新检查（{status}，匿名配额按出口 IP 共享已耗尽）：稍等几分钟到一小时再点「检查更新」即可，不影响其他功能"
+        ));
+    }
+    let rel: Release = resp
         .json()
         .await
         .map_err(|e| format!("更新源不是合法的 Releases JSON：{e}"))?;
