@@ -5,9 +5,11 @@ use std::sync::RwLock;
 use std::time::Duration;
 use tokio::process::Command;
 
-/// 官方 dsh 包里需要放行安装脚本的原生模块清单
+/// 官方 dsh 包里需要放行安装脚本的原生模块清单。
+/// fs-ext：0.1.3-alpha 起 dsh-session-persistence-jsonl 的硬依赖，node-gyp 编译，
+/// 不放行则 .node 缺失、运行时 require 失败。新增原生依赖若报 allow-scripts 警告，往这加。
 pub const DSH_ALLOW_SCRIPTS: &str =
-    "@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs";
+    "@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs,fs-ext";
 pub const DEFAULT_NODE_VERSION: &str = "24.19.0";
 
 pub fn node_dir() -> PathBuf {
