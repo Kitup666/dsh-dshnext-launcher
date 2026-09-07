@@ -23,8 +23,8 @@ RequestExecutionLevel user   ; per-user, no UAC prompt
 
 !include "MUI2.nsh"
 !define MUI_ABORTWARNING
-!define MUI_ICON "..\assets\icons\icon.ico"
-!define MUI_UNICON "..\assets\icons\icon.ico"
+!define MUI_ICON "..\assets\icons\app.ico"
+!define MUI_UNICON "..\assets\icons\app.ico"
 
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -47,7 +47,7 @@ Section "Install"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
-  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 17734   ; KB, = release exe size
+  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 21790   ; KB, = release exe size
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 SectionEnd
 
