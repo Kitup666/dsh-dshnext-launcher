@@ -33,7 +33,8 @@ pub struct Config {
     pub tray: bool,
     /// 启动器窗口置顶（状态栏的图钉开关，立即生效并保存）
     pub always_on_top: bool,
-    /// 启动器更新源（GitHub Releases API 地址），空 = 不检查更新
+    /// 启动器更新源（GitHub Releases API 地址）。空 = 用内置默认源
+    /// （DEFAULT_UPDATE_URL）；检查只在用户点「检查更新」时发生，无后台流量。
     pub update_url: String,
     /// harness 异常退出时自动重启（指数退避，最多连 3 次）
     pub auto_restart: bool,
@@ -42,6 +43,22 @@ pub struct Config {
     pub dsh_home: String,
     /// 上次关闭时的窗口几何，开窗恢复
     pub window: Option<WindowGeom>,
+}
+
+/// 本仓库的 Releases API 地址，内置更新源。发布 Release 时附上 dshnext.exe
+/// （可选 dshnext.exe.sha256）即可被自更新拉到。
+pub const DEFAULT_UPDATE_URL: &str =
+    "https://api.github.com/repos/Kitup666/dsh-dshnext-launcher/releases/latest";
+
+impl Config {
+    /// 实际生效的更新源：用户填了就用用户的（fork/镜像），没填用内置。
+    pub fn effective_update_url(&self) -> &str {
+        if self.update_url.trim().is_empty() {
+            DEFAULT_UPDATE_URL
+        } else {
+            &self.update_url
+        }
+    }
 }
 
 impl Default for Config {
@@ -152,7 +169,7 @@ pub fn config_path() -> PathBuf {
 }
 
 /// 离线安装包目录约定：`<data_dir>/offline/`。放 `node-*.zip`、`dsh*.tgz`、
-/// `pnpm*.tgz`，环境页检测到就提供「离线安装」（roadmap #9，断网可装）。
+/// `pnpm*.tgz`，环境页检测到就提供「离线安装」（断网可装）。
 pub fn offline_dir() -> PathBuf {
     data_dir().join("offline")
 }

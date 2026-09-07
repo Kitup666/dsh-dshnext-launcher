@@ -272,7 +272,7 @@ impl Dshnext {
                 Task::none()
             }
             Message::CheckUpdate => {
-                let url = self.config.update_url.clone();
+                let url = self.config.effective_update_url().to_string();
                 Task::perform(crate::core::selfupdate::latest(url), Message::UpdateChecked)
             }
             Message::UpdateChecked(result) => match result {
@@ -1459,7 +1459,7 @@ impl Dshnext {
                 if self.stopping.remove(&profile) {
                     // 主动停止，走完收尾。
                 } else if code != 0 && self.config.auto_restart {
-                    // 崩溃自愈（roadmap #8）：指数退避 2^n 秒，连 3 次封顶。
+                    // 崩溃自愈：指数退避 2^n 秒，连 3 次封顶。
                     const MAX: u32 = 3;
                     let e = self
                         .crash_restarts

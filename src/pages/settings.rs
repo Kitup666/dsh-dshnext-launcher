@@ -265,7 +265,7 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
             widgets::field(
                 "启动器更新源（GitHub Releases API）",
                 iced::widget::container(widgets::input(
-                    "留空则不检查启动器更新",
+                    "留空则使用内置的 GitHub Releases 源",
                     &app.cfg_draft.update_url,
                     Message::CfgUpdateUrl,
                     true,
@@ -273,7 +273,7 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
                 ))
                 .width(Length::Fixed(420.0))
                 .into(),
-                Some("发布 Release 时附上 dshnext.exe（可选 dshnext.exe.sha256），这里填 …/releases/latest 地址。"),
+                Some("默认使用内置的 GitHub Releases 源；用 fork 或镜像时可在这里覆盖。"),
                 pal
             ),
             space::vertical().height(6.0),
@@ -330,8 +330,8 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
                         Some(Message::HoverEnter("ab.diag")),
                         Some(Message::HoverExit("ab.diag")),
                     ),
-                    // 没配更新源就不给检查入口（点了一定失败，徒增困惑）。
-                    (!app.config.update_url.is_empty()).then(|| {
+                    // 内置了默认更新源，入口恒有；填了自定义源就用自定义的。
+                    Some(
                         button::btn(
                             Spec::new("ab.update", "检查更新", Variant::Secondary)
                                 .size(BtnSize::Small),
@@ -340,8 +340,8 @@ fn about<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
                             Some(Message::CheckUpdate),
                             Some(Message::HoverEnter("ab.update")),
                             Some(Message::HoverExit("ab.update")),
-                        )
-                    }),
+                        ),
+                    ),
                 ]
                 .spacing(10),
             )

@@ -1,9 +1,9 @@
-//! 启动器自更新（roadmap #7）。
+//! 启动器自更新。
 //!
-//! 更新源是 **config.update_url**（空 = 功能关闭，UI 不显示入口）——本仓库
-//! 尚未发布，地址由用户发布后填入。支持格式：GitHub Releases API
-//! `.../releases/latest` 的 JSON（`tag_name` + assets 里 `dshnext.exe` 与
-//! 可选的 `dshnext.exe.sha256`）。
+//! 更新源是 **config.update_url**——空 = 用内置默认源（`store::DEFAULT_UPDATE_URL`，
+//! 即本仓库的 `.../releases/latest`）；填了自定义地址（fork/镜像）就优先用。支持
+//! 格式：GitHub Releases API `.../releases/latest` 的 JSON（`tag_name` + assets
+//! 里 `dshnext.exe` 与可选的 `dshnext.exe.sha256`）。
 //!
 //! 流程：检查（比版本）→ 下载到数据目录 → SHA256 校验（fail-closed，用
 //! PowerShell Get-FileHash，零新依赖）→ 换身（运行中的 exe 改名 .old、新 exe
