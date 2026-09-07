@@ -1,7 +1,7 @@
 //! `update` / `subscription`：所有状态迁移。与 view 分开是因为这文件本身就长，
 //! 混在一起找东西费劲。
 
-use crate::app::{Dshnext, Message, Mode, Onboarding, PickField, PluginTab, TOAST_TTL};
+use crate::app::{Dshnext, Message, Mode, Onboarding, PickField, PluginTab, RuntimeOp, TOAST_TTL};
 use crate::bridge;
 use crate::core::event::{CoreEvent, LogStream};
 use crate::pages::{self, Page};
@@ -349,6 +349,8 @@ impl Dshnext {
             Message::CloseDialog => {
                 self.dialog = None;
                 self.draft.clear();
+                // 「停止并继续」被取消：清掉待续跑操作，别让下次轮询意外触发。
+                self.resume_runtime_op = None;
                 // 关闭比打开快（150ms vs 220ms）——退场拖沓会让界面显得粘手。
                 self.anim
                     .animate_to("modal", 0.0, Duration::from_millis(150), Instant::now());
@@ -519,7 +521,7 @@ impl Dshnext {
                 Task::done(Message::LoadVersions)
             }
             Message::InstallNode => {
-                if let Some(t) = self.require_stopped("安装 Node.js") {
+                if let Some(t) = self.require_stopped(RuntimeOp::InstallNode) {
                     return t;
                 }
                 let label = format!("正在下载安装便携版 Node.js {}", self.node_pick);
@@ -534,7 +536,7 @@ impl Dshnext {
                 )
             }
             Message::InstallDsh => {
-                if let Some(t) = self.require_stopped("安装 dsh") {
+                if let Some(t) = self.require_stopped(RuntimeOp::InstallDsh) {
                     return t;
                 }
                 let label = format!("正在安装 dsh {}", self.dsh_pick);
@@ -549,7 +551,7 @@ impl Dshnext {
                 )
             }
             Message::InstallNodeOffline(zip) => {
-                if let Some(t) = self.require_stopped("离线安装 Node.js") {
+                if let Some(t) = self.require_stopped(RuntimeOp::InstallNodeOffline(zip.clone())) {
                     return t;
                 }
                 self.busy = Some("正在离线安装便携版 Node.js".into());
@@ -561,7 +563,7 @@ impl Dshnext {
                 )
             }
             Message::InstallDshOffline(tgz) => {
-                if let Some(t) = self.require_stopped("离线安装 dsh") {
+                if let Some(t) = self.require_stopped(RuntimeOp::InstallDshOffline(tgz.clone())) {
                     return t;
                 }
                 self.busy = Some("正在离线安装 dsh".into());
@@ -574,7 +576,7 @@ impl Dshnext {
                 )
             }
             Message::InstallPnpmOffline(tgz) => {
-                if let Some(t) = self.require_stopped("离线安装 pnpm") {
+                if let Some(t) = self.require_stopped(RuntimeOp::InstallPnpmOffline(tgz.clone())) {
                     return t;
                 }
                 self.busy = Some("正在离线安装 pnpm".into());
@@ -601,7 +603,7 @@ impl Dshnext {
                 Task::none()
             }
             Message::InstallPnpm => {
-                if let Some(t) = self.require_stopped("安装 pnpm") {
+                if let Some(t) = self.require_stopped(RuntimeOp::InstallPnpm) {
                     return t;
                 }
                 self.busy = Some("正在安装 pnpm".into());
@@ -611,6 +613,36 @@ impl Dshnext {
                 Task::perform(
                     async move { crate::core::installs::install_pnpm(tx, cfg).await },
                     |r| Message::OpDone("安装 pnpm", r),
+                )
+            }
+            Message::RemoveDshNow => {
+                // 守卫放这里而不是 Dialog 确认臂：两条入口（用户确认卸载、
+                // 「停止并继续」续跑）都汇到这条消息，守卫天然复用。
+                if let Some(t) = self.require_stopped(RuntimeOp::RemoveDsh) {
+                    return t;
+                }
+                self.busy = Some("正在卸载 dsh".into());
+                Task::perform(
+                    async {
+                        tokio::task::spawn_blocking(crate::core::installs::remove_dsh)
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |r| Message::OpDone("卸载 dsh", r),
+                )
+            }
+            Message::RemoveNodeNow => {
+                if let Some(t) = self.require_stopped(RuntimeOp::RemoveNode) {
+                    return t;
+                }
+                self.busy = Some("正在删除托管 Node.js".into());
+                Task::perform(
+                    async {
+                        tokio::task::spawn_blocking(crate::core::installs::remove_node)
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |r| Message::OpDone("删除托管 Node.js", r),
                 )
             }
             Message::OpDone(what, result) => {
@@ -665,6 +697,9 @@ impl Dshnext {
                 Task::none()
             }
             Message::Start(profile) => {
+                // 用户手动启动 = 接管了局面，之前挂在「停止并继续」上的
+                // 待续跑操作作废（否则下次实例清空时会意外触发）。
+                self.resume_runtime_op = None;
                 // 先探测端口再 spawn：活动 web 服务可复用、半死进程提前报错，
                 // 别等 dsh 绑定失败再翻日志（对齐 WEP-56 的复用策略）。
                 let port = self.config.port;
@@ -820,6 +855,15 @@ impl Dshnext {
             }
             Message::ProcsLoaded(list) => {
                 self.procs = list;
+                // 「停止并继续」的续跑点：实例全停干净了，取回暂存的操作重投。
+                // 有残留实例（停止失败/又开了一个）就继续等下一次轮询。
+                if let Some(op) = self.resume_runtime_op.clone() {
+                    if self.procs.is_empty() {
+                        self.resume_runtime_op = None;
+                        self.notify(ToastKind::Info, format!("实例已停止，继续{}", op.label()));
+                        return Task::done(op.message());
+                    }
+                }
                 // 轮询只在有实例时挂——正好用来清过期的自动打开等待（30s）。
                 let now = Instant::now();
                 let expired: Vec<String> = self
@@ -1177,33 +1221,27 @@ impl Dshnext {
                 )
                 .chain(Task::done(Message::RefreshPlugins))
             }
-            Dialog::RemoveNode => {
-                if let Some(t) = self.require_stopped("删除托管 Node.js") {
-                    return t;
+            Dialog::RemoveNode => Task::done(Message::RemoveNodeNow),
+            Dialog::RemoveDsh => Task::done(Message::RemoveDshNow),
+            Dialog::StopAndContinue(_) => {
+                // 「停止并继续」：停掉全部实例，ProcsLoaded 清空时续跑
+                // resume_runtime_op。取消路径走 CloseDialog（resume 残留
+                // 由 CloseDialog/手动启动清掉）。
+                let names: Vec<String> = self.procs.iter().map(|p| p.profile.clone()).collect();
+                if names.is_empty() {
+                    // 弹框到确认之间实例自己退了：直接续跑。
+                    self.resume_runtime_op
+                        .take()
+                        .map(|op| Task::done(op.message()))
+                        .unwrap_or_else(Task::none)
+                } else {
+                    Task::batch(
+                        names
+                            .iter()
+                            .map(|n| Task::done(Message::Stop(n.clone())))
+                            .chain(std::iter::once(Task::done(Message::PollProcs))),
+                    )
                 }
-                self.busy = Some("正在删除托管 Node.js".into());
-                Task::perform(
-                    async {
-                        tokio::task::spawn_blocking(crate::core::installs::remove_node)
-                            .await
-                            .unwrap_or_else(|e| Err(e.to_string()))
-                    },
-                    |r| Message::OpDone("删除托管 Node.js", r),
-                )
-            }
-            Dialog::RemoveDsh => {
-                if let Some(t) = self.require_stopped("卸载 dsh") {
-                    return t;
-                }
-                self.busy = Some("正在卸载 dsh".into());
-                Task::perform(
-                    async {
-                        tokio::task::spawn_blocking(crate::core::installs::remove_dsh)
-                            .await
-                            .unwrap_or_else(|e| Err(e.to_string()))
-                    },
-                    |r| Message::OpDone("卸载 dsh", r),
-                )
             }
         }
     }
@@ -1274,18 +1312,20 @@ impl Dshnext {
     /// config 落盘），OpDone(Ok) 负责收尾（关表单 + 重探环境）。
     /// 改动托管 runtime 的操作（装/卸 dsh、Node、pnpm）都会覆盖或删除正被
     /// harness 进程使用的文件——node 惰性加载模块树，装到一半实例会吃到
-    /// 半新半旧的模块；删运行中的 node.exe 更会半途失败留残局。与目录迁移
-    /// 同一道闸。返回 Some(task) = 有实例在跑，调用方直接 return 这个 task。
-    fn require_stopped(&mut self, what: &str) -> Option<Task<Message>> {
+    /// 半新半旧的模块；删运行中的 node.exe 更会半途失败留残局。**不直接
+    /// 拒绝**：弹「停止并继续」确认框，用户同意则先停全部实例再续跑
+    /// （`resume_runtime_op` 暂存，ProcsLoaded 清空时取回）。返回
+    /// Some(task) = 已弹框/已拦下，调用方直接 return。
+    fn require_stopped(&mut self, op: crate::app::RuntimeOp) -> Option<Task<Message>> {
         if self.procs.is_empty() {
-            None
-        } else {
-            self.notify(
-                ToastKind::Warn,
-                format!("先停止所有运行中的实例，再{what}"),
-            );
-            Some(Task::none())
+            return None;
         }
+        self.resume_runtime_op = Some(op.clone());
+        self.draft.clear();
+        self.dialog = Some(Dialog::StopAndContinue(op.label().into()));
+        self.anim
+            .animate_to("modal", 1.0, Duration::from_millis(220), Instant::now());
+        Some(Task::none())
     }
 
     fn confirm_dirs_edit(&mut self) -> Task<Message> {

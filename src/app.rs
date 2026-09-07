@@ -182,6 +182,9 @@ pub struct Dshnext {
     /// 目录转移进行中（confirm_dirs_edit 到 MigrateDone 之间）。挂 MigrateTick
     /// 心跳订阅、浮层显示进度条并禁用按钮。
     pub migrating: bool,
+    /// 「停止并继续」待续跑的 runtime 变更操作：守卫拦下时暂存，用户确认停
+    /// 实例后由 ProcsLoaded（空）取回续投。取消/用户手动接管时清空。
+    pub resume_runtime_op: Option<RuntimeOp>,
     /// 最近一次读到的复制进度（MigrateTick 从 core::migrate::progress() 抄来；
     /// 存字段是为了 view 有值可画）。
     pub migrate_prog: (u64, u64),
@@ -246,6 +249,46 @@ pub struct Dshnext {
     pub port_text: String,
 }
 
+/// 会被「实例运行中」守卫拦下的托管 runtime 变更操作。守卫弹确认框，用户
+/// 同意后先停全部实例，停干净（ProcsLoaded 空）再按 `message()` 续跑原操作。
+#[derive(Debug, Clone)]
+pub enum RuntimeOp {
+    InstallDsh,
+    InstallNode,
+    InstallPnpm,
+    InstallDshOffline(std::path::PathBuf),
+    InstallNodeOffline(std::path::PathBuf),
+    InstallPnpmOffline(std::path::PathBuf),
+    RemoveDsh,
+    RemoveNode,
+}
+
+impl RuntimeOp {
+    /// 续跑时重新投递的消息（重新进各自的 update 臂，守卫此时已放行）。
+    pub fn message(&self) -> Message {
+        match self {
+            RuntimeOp::InstallDsh => Message::InstallDsh,
+            RuntimeOp::InstallNode => Message::InstallNode,
+            RuntimeOp::InstallPnpm => Message::InstallPnpm,
+            RuntimeOp::InstallDshOffline(p) => Message::InstallDshOffline(p.clone()),
+            RuntimeOp::InstallNodeOffline(p) => Message::InstallNodeOffline(p.clone()),
+            RuntimeOp::InstallPnpmOffline(p) => Message::InstallPnpmOffline(p.clone()),
+            RuntimeOp::RemoveDsh => Message::RemoveDshNow,
+            RuntimeOp::RemoveNode => Message::RemoveNodeNow,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            RuntimeOp::InstallDsh | RuntimeOp::InstallDshOffline(_) => "安装 dsh",
+            RuntimeOp::InstallNode | RuntimeOp::InstallNodeOffline(_) => "安装 Node.js",
+            RuntimeOp::InstallPnpm | RuntimeOp::InstallPnpmOffline(_) => "安装 pnpm",
+            RuntimeOp::RemoveDsh => "卸载 dsh",
+            RuntimeOp::RemoveNode => "删除托管 Node.js",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     // 窗口
@@ -297,6 +340,10 @@ pub enum Message {
     MigrateDone(Result<Vec<String>, String>),
     /// 转移进行中的心跳（~120ms 一次）：从 core::migrate 抄进度给 view 画。
     MigrateTick,
+    /// 卸载 dsh / 删除托管 Node 的实际执行（从 Dialog 确认臂拆出来，
+    /// 守卫放行或「停止并继续」续跑都投递这个）。
+    RemoveDshNow,
+    RemoveNodeNow,
     ToastTick(Instant),
     Notify(ToastKind, String),
     /// 什么都不做。给「按钮在位但当前无动作」的场合用。
@@ -420,6 +467,7 @@ impl Dshnext {
             onboarding,
             dirs_edit: None,
             migrating: false,
+            resume_runtime_op: None,
             migrate_prog: (0, 0),
             boot_migrate: false,
             toasts: Vec::new(),

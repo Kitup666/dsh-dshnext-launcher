@@ -35,6 +35,8 @@ pub enum Dialog {
     RemoveNode,
     /// 卸载 dsh 确认。
     RemoveDsh,
+    /// 实例运行中守卫的「停止并继续」确认（带操作名，如「安装 dsh」）。
+    StopAndContinue(String),
 }
 
 impl Dialog {
@@ -107,6 +109,12 @@ impl Dialog {
                 "卸载 dsh？".into(),
                 "仅删除启动器目录下的 dsh 及其依赖，你创建的版本和会话记录会保留。",
                 "卸载",
+                true,
+            ),
+            Dialog::StopAndContinue(op) => (
+                format!("先停止实例，再{op}？"),
+                "实例正在运行。改动的文件（runtime、Node、pnpm）正被它们使用，边跑边换会吃到半新半旧的模块。确认后先停止全部实例，停干净后自动继续。",
+                "停止并继续",
                 true,
             ),
         }

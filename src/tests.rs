@@ -439,8 +439,8 @@ fn running_instance_shows_stop() {
 
 // ------------------------------------------------ 首次启动目录引导
 
-/// 实例运行中时，改托管 runtime 的操作必须被守卫拦下（toast 警告、busy 不动、
-/// 不产生 OpDone）——装/卸到一半运行中的 harness 会吃到半新半旧模块。
+/// 实例运行中时，改托管 runtime 的操作弹「停止并继续」确认框（不直接开跑，
+/// 也不再是干拒绝）：暂存 resume、开框、busy 不动。8 条路径一致。
 #[test]
 fn runtime_ops_guarded_while_running() {
     let mut a = seeded_app();
@@ -460,20 +460,70 @@ fn runtime_ops_guarded_while_running() {
         Message::InstallPnpmOffline(std::path::PathBuf::from("x.tgz")),
     ] {
         a.busy = None;
+        a.dialog = None;
+        a.resume_runtime_op = None;
         a.update(msg.clone());
-        assert!(a.busy.is_none(), "{msg:?} 不应开跑（守卫应拦下）");
+        assert!(a.busy.is_none(), "{msg:?} 不应开跑（应先弹确认框）");
+        assert!(a.resume_runtime_op.is_some(), "{msg:?} 应暂存续跑操作");
         assert!(
-            a.toasts.iter().any(|t| t.text.contains("先停止")),
-            "{msg:?} 应弹「先停止」警告"
+            matches!(a.dialog, Some(Dialog::StopAndContinue(_))),
+            "{msg:?} 应弹「停止并继续」框"
         );
+        // 取消路径：关框必须清掉 resume，防止之后轮询误触发。
+        a.update(Message::CloseDialog);
+        assert!(a.resume_runtime_op.is_none(), "取消后 resume 应清空");
     }
-    // 卸载走 Dialog 确认臂，同样要有守卫。
-    for d in [Dialog::RemoveDsh, Dialog::RemoveNode] {
+    // 卸载链路：Dialog 确认产生 RemoveXxxNow（Task::done 在测试里不执行，
+    // 直接派发等价消息），守卫在 Now 臂上拦。
+    for (d, now) in [
+        (Dialog::RemoveDsh, Message::RemoveDshNow),
+        (Dialog::RemoveNode, Message::RemoveNodeNow),
+    ] {
         a.busy = None;
-        a.dialog = Some(d.clone());
-        a.update(Message::DialogConfirm);
-        assert!(a.busy.is_none(), "{d:?} 不应在实例运行中开跑");
+        a.dialog = None;
+        a.resume_runtime_op = None;
+        a.update(now.clone());
+        assert!(a.busy.is_none(), "{d:?} 不应直接开跑");
+        assert!(a.resume_runtime_op.is_some(), "{d:?} 应暂存续跑操作");
+        assert!(
+            matches!(a.dialog, Some(Dialog::StopAndContinue(_))),
+            "{d:?} 应转弹「停止并继续」框"
+        );
+        a.dialog = None;
+        a.resume_runtime_op = None;
     }
+}
+
+/// 「停止并继续」确认后的链路：停实例 → ProcsLoaded 空 → 续跑原操作。
+/// 注意 iced_test 的 update 返回 Task 但**不会执行**，续跑消息要取出来手动
+/// 派发（与 update.rs 里 Task::done 的真实投递等价）。
+#[test]
+fn stop_and_continue_resumes_after_procs_empty() {
+    let mut a = seeded_app();
+    a.procs = vec![crate::core::procman::ProcStatus {
+        profile: "demo".into(),
+        port: 3080,
+        url: "http://127.0.0.1:3080".into(),
+        pid: 4321,
+        uptime_secs: 75,
+    }];
+    a.update(Message::InstallPnpm);
+    assert!(matches!(a.dialog, Some(Dialog::StopAndContinue(_))));
+    // 确认「停止并继续」→ resume 挂起、busy 不变（原操作没跑）。
+    a.update(Message::DialogConfirm);
+    assert!(a.resume_runtime_op.is_some(), "确认后应挂着待续跑操作");
+    assert!(a.busy.is_none(), "确认后原操作不应立即开跑");
+    // 实例清空（PollProcs 回来是空的）：resume 取回、提示续跑。续跑的具体
+    // 操作经 Task::done 投递，测试里取不出 Task 内的消息，手动派发等价验证。
+    a.procs.clear();
+    a.update(Message::ProcsLoaded(Vec::new()));
+    assert!(a.resume_runtime_op.is_none(), "续跑点 resume 应清空");
+    assert!(
+        a.toasts.iter().any(|t| t.text.contains("继续")),
+        "应提示「实例已停止，继续…」"
+    );
+    a.update(Message::InstallPnpm);
+    assert!(a.busy.is_some(), "实例清空后原操作应放行开跑");
 }
 
 // 引导确认会改进程级全局（DATA_DIR / pointer / 磁盘），两个用例必须串行，

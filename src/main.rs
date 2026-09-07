@@ -59,6 +59,8 @@ fn main() -> iced::Result {
     let force_dirs_edit = flag("--dirs-edit");
     // --migrate-go <目标目录>：开窗即确认转移（进度条出图用）。
     let migrate_go = opt("--migrate-go");
+    // --stop-dialog：开在「停止并继续」确认框上（守卫视觉出图用）。
+    let force_stop_dialog = flag("--stop-dialog");
     // --migrate-to <目录> [--dsh-home <目录>]：开窗前执行目录转移（两阶段，
     // 见 core::migrate）。修复现场 / 迁移验证用；完成后正常进界面。
     if let Some(dest) = opt("--migrate-to") {
@@ -185,6 +187,10 @@ fn main() -> iced::Result {
             app.switch = switch;
             if force_onboarding {
                 app.onboarding = Some(app::Onboarding::new());
+            }
+            // --stop-dialog：开在「停止并继续」确认框上（守卫视觉出图用）。
+            if force_stop_dialog {
+                app.dialog = Some(crate::ui::modal::Dialog::StopAndContinue("安装 dsh".into()));
             }
             if force_dirs_edit {
                 app.dirs_edit = Some(app::Onboarding::for_edit(&app.config.dsh_home));
