@@ -108,11 +108,16 @@ pub fn sha256_file(path: &std::path::Path) -> Result<String, String> {
 }
 
 /// 下载的字节是否可信。**fail-closed**：期望哈希是 Some 就必须精确相等，
-/// None（更新源没提供 .sha256 资产）才放行。
+/// None（更新源没提供 .sha256 资产）才放行。期望值容忍整份 .sha256 文本
+/// （trim + 取首个空白分隔字段），裸 hash 与「hash  文件名」两种格式都接。
 pub fn verify_hash(downloaded: &std::path::Path, expected: Option<&str>) -> Result<(), String> {
-    let Some(expected) = expected else {
+    let Some(raw) = expected else {
         return Ok(());
     };
+    let expected = raw.trim().split_whitespace().next().unwrap_or("");
+    if expected.len() != 64 {
+        return Err(format!(".sha256 内容不合法（{raw:?}），已拒绝安装"));
+    }
     let actual = sha256_file(downloaded)?;
     if actual == expected.to_lowercase() {
         Ok(())
