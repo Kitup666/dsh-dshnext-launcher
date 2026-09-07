@@ -258,7 +258,7 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
                 ]
                 .spacing(8)
                 .into(),
-                None,
+                Some("留空 = 官方源（安装与版本列表都以它为准，不受全局 .npmrc 影响）。选镜像若缺某个版本（alpha 常见），会自动回落官方重试。"),
                 pal
             ),
             space::vertical().height(6.0),

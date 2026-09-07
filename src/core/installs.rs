@@ -1,8 +1,18 @@
-use crate::core::envres::{child_path, dsh_prefix, node_dir, node_dist_base, DSH_ALLOW_SCRIPTS, DEFAULT_NODE_VERSION};
+use crate::core::envres::{child_path, dsh_prefix, node_dir, node_dist_base, registry_url, DSH_ALLOW_SCRIPTS, DEFAULT_NODE_VERSION};
 use crate::core::event::{progress, EventSink};
 use crate::core::store::Config;
 use futures_util::StreamExt;
 use std::os::windows::process::CommandExt;
+use std::sync::{Arc, Mutex};
+
+/// npm 官方源：留空时的默认，也是镜像缺版本时的回落目标。
+pub const OFFICIAL_REGISTRY: &str = "https://registry.npmjs.org";
+
+/// 判断 npm 失败是不是「registry 上找不到该版本」——镜像同步滞后时就是这个。
+fn is_missing_version(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    e.contains("etarget") || e.contains("notarget") || e.contains("no matching version")
+}
 
 /// 把一段文本按行转发为 EnvProgress 事件
 fn emit_lines(tx: &EventSink, task: &str, buf: &str) {
@@ -13,7 +23,9 @@ fn emit_lines(tx: &EventSink, task: &str, buf: &str) {
     }
 }
 
-/// 阻塞式收集子进程输出并按行发事件（放到 spawn_blocking 里跑）
+/// 阻塞式收集子进程输出并按行发事件（放到 spawn_blocking 里跑）。
+/// 同时把全部输出攒进缓冲，失败时把尾部塞进 Err——上层据此判断是不是
+/// 「镜像缺版本」（ETARGET）以便回落官方重试。
 fn run_streaming(tx: EventSink, task: String, mut cmd: std::process::Command) -> Result<(), String> {
     use std::io::BufRead;
     cmd.creation_flags(0x0800_0000);
@@ -26,14 +38,20 @@ fn run_streaming(tx: EventSink, task: String, mut cmd: std::process::Command) ->
     let stderr = child.stderr.take().unwrap();
     let t2 = task.clone();
     let tx2 = tx.clone();
+    let sink: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let sink2 = sink.clone();
     let err_thread = std::thread::spawn(move || {
         let reader = std::io::BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
+            sink2.lock().unwrap().push_str(&line);
+            sink2.lock().unwrap().push('\n');
             progress(&tx2, &t2, line);
         }
     });
     let reader = std::io::BufReader::new(stdout);
     for line in reader.lines().map_while(Result::ok) {
+        sink.lock().unwrap().push_str(&line);
+        sink.lock().unwrap().push('\n');
         progress(&tx, &task, line);
     }
     err_thread.join().map_err(|_| "stderr 线程异常".to_string())?;
@@ -41,11 +59,15 @@ fn run_streaming(tx: EventSink, task: String, mut cmd: std::process::Command) ->
     if status.success() {
         Ok(())
     } else {
-        Err(format!("命令退出码：{}", status.code().unwrap_or(-1)))
+        let all = sink.lock().unwrap().clone();
+        // 只留尾部，ETARGET 这类错误信息在末尾；太长会撑爆 toast。
+        let tail: String = all.chars().rev().take(2000).collect::<Vec<_>>().into_iter().rev().collect();
+        Err(format!("命令退出码：{}\n{tail}", status.code().unwrap_or(-1)))
     }
 }
 
-fn npm_cmd(cfg: &Config) -> std::process::Command {
+/// 只负责定位 npm 可执行 + PATH，不带任何子命令/旗标。
+fn npm_base_cmd() -> std::process::Command {
     // npm 用系统的还是便携的？便携 node 安装后包含 npm.cmd；否则找系统 npm
     let mut cmd = if node_dir().join("npm.cmd").exists() {
         let mut c = std::process::Command::new("cmd");
@@ -57,13 +79,21 @@ fn npm_cmd(cfg: &Config) -> std::process::Command {
         c
     };
     cmd.env("PATH", child_path());
-    if !cfg.npm_registry.trim().is_empty() {
-        // 必须用 `--registry=<url>` 等号形式：带空格的 `--registry <url>` 经
-        // `cmd /C` 会被整体加引号，npm 解析器拆坏它（registry 不生效、install
-        // 被误当位置参数）。等号形式是单 token，无歧义。
-        cmd.arg(format!("--registry={}", cfg.npm_registry.trim()));
-    }
     cmd
+}
+
+/// 带 registry 的 npm 命令。**永远显式传 `--registry=`**（等号形式，见下），
+/// 留空走官方——这样安装用的源和版本列表（registry_url）一致，且不受用户
+/// 全局 `.npmrc` 里滞后镜像的劫持。必须用等号形式：带空格的 `--registry <url>`
+/// 经 `cmd /C` 会被整体加引号，npm 解析器拆坏它（registry 不生效）。
+fn npm_cmd_with_registry(registry: &str) -> std::process::Command {
+    let mut cmd = npm_base_cmd();
+    cmd.arg(format!("--registry={registry}"));
+    cmd
+}
+
+fn npm_cmd(cfg: &Config) -> std::process::Command {
+    npm_cmd_with_registry(&registry_url(cfg))
 }
 
 /// 下载并解压便携版 Node.js（strip 掉 zip 的顶层目录）
@@ -284,6 +314,16 @@ pub async fn install_pnpm_offline(
 }
 
 /// 把 dsh 安装/更新到托管前缀（version 传 "latest" 或精确版本号）
+/// 构造 dsh 安装命令（指定 registry）。独立成 fn 是为了能在「主源失败→官方
+/// 重试」里被两个 spawn_blocking 各自调用（闭包 move 进一次就没了）。
+fn dsh_install_cmd(ver: &str, registry: &str) -> std::process::Command {
+    let mut cmd = npm_cmd_with_registry(registry);
+    cmd.arg("install").arg("-g").arg("--prefix").arg(dsh_prefix());
+    cmd.arg(format!("--allow-scripts={DSH_ALLOW_SCRIPTS}"));
+    cmd.arg(ver);
+    cmd
+}
+
 pub async fn install_dsh(tx: EventSink, cfg: Config, version: String) -> Result<(), String> {
     let ver = version.trim();
     let ver = if ver.is_empty() || ver == "latest" {
@@ -291,15 +331,36 @@ pub async fn install_dsh(tx: EventSink, cfg: Config, version: String) -> Result<
     } else {
         format!("@deepseek-ai/dsh@{ver}")
     };
-    let mut cmd = npm_cmd(&cfg);
-    cmd.arg("install").arg("-g").arg("--prefix").arg(dsh_prefix());
-    cmd.arg(format!("--allow-scripts={DSH_ALLOW_SCRIPTS}"));
-    cmd.arg(&ver);
     std::fs::create_dir_all(dsh_prefix()).map_err(|e| e.to_string())?;
+    let primary = registry_url(&cfg);
     let task = "dsh".to_string();
-    tokio::task::spawn_blocking(move || run_streaming(tx, task, cmd))
-        .await
-        .map_err(|e| e.to_string())?
+
+    // 先用配置的源（留空=官方）装。
+    let v1 = ver.clone();
+    let p1 = primary.clone();
+    let tx1 = tx.clone();
+    let task1 = task.clone();
+    let first = tokio::task::spawn_blocking(move || {
+        run_streaming(tx1, task1, dsh_install_cmd(&v1, &p1))
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match first {
+        Ok(()) => Ok(()),
+        // 镜像缺这个版本（alpha 常见）且用的不是官方 → 自动回落官方重试一次。
+        Err(e) if is_missing_version(&e) && primary != OFFICIAL_REGISTRY => {
+            progress(&tx, "dsh", "当前镜像缺该版本，自动改用官方源重试…");
+            let v2 = ver.clone();
+            let task2 = task.clone();
+            tokio::task::spawn_blocking(move || {
+                run_streaming(tx, task2, dsh_install_cmd(&v2, OFFICIAL_REGISTRY))
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// 安装 pnpm 到托管前缀（dsh plugin 依赖它）
@@ -334,4 +395,19 @@ pub fn remove_dsh() -> Result<(), String> {
         std::fs::remove_dir_all(dir).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_missing_version;
+    #[test]
+    fn detects_mirror_missing_version() {
+        assert!(is_missing_version(
+            "命令退出码：1\nnpm error code ETARGET\nnpm error notarget No matching version found for @deepseek-ai/dsh-hooks-codex@^0.1.3-alpha.2."
+        ));
+        assert!(is_missing_version("npm ERR! 404 ... no matching version"));
+        // 别的失败（权限/网络）不该触发回落官方重试
+        assert!(!is_missing_version("命令退出码：1\nEPERM operation not permitted"));
+        assert!(!is_missing_version("命令退出码：1\nENOTFOUND registry.invalid"));
+    }
 }

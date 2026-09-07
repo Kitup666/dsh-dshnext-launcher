@@ -43,7 +43,7 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 
 ## 安装
 
-从 [Releases](https://github.com/Kitup666/dsh-dshnext-launcher/releases) 下载 `Dshnext_0.1.6_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 exe 拷走即用。
+从 [Releases](https://github.com/Kitup666/dsh-dshnext-launcher/releases) 下载 `Dshnext_0.1.7_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 exe 拷走即用。
 
 系统要求：Windows 10/11 x64。**无需**安装 Node.js、WebView2 或任何运行时。
 
@@ -67,7 +67,7 @@ cargo run --release -- --page env --shot out.png --after 4000   # 自截图
 
 Rust 1.92+（edition 2024）。构建产物静态链 CRT（`+crt-static` 已固化在 `.cargo/config.toml`），`dumpbin /DEPENDENTS` 只剩系统 DLL。
 
-NSIS 安装包：`makensis packaging/installer.nsi` → `packaging/Dshnext_0.1.6_x64-setup.exe`（装/卸全流程实测：包内 exe 与构建产物 SHA-256 一致，卸载后目录/开始菜单/注册表三处全净）。
+NSIS 安装包：`makensis packaging/installer.nsi` → `packaging/Dshnext_0.1.7_x64-setup.exe`（装/卸全流程实测：包内 exe 与构建产物 SHA-256 一致，卸载后目录/开始菜单/注册表三处全净）。
 
 ## 文档
 
