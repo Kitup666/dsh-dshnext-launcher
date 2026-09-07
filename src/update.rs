@@ -888,8 +888,47 @@ impl Dshnext {
                 }
                 Task::none()
             }
+            Message::OpenWebUi(url) => {
+                // 带 token 的 WebUI 地址按 app_window 分流：桌面窗口模式
+                // 起浏览器 --app 独立窗口（resolve 失败会带回 url 回退），
+                // 否则与 OpenPath 同款系统浏览器标签页。
+                if self.config.app_window {
+                    // Err 载荷约定恒为 url（供回退开浏览器），join 错误也一样。
+                    let url2 = url.clone();
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || crate::core::appwin::open(url2))
+                                .await
+                                .unwrap_or_else(|_| Err(url))
+                        },
+                        Message::AppWinOpened,
+                    )
+                } else {
+                    if let Err(e) = open::that_detached(&url) {
+                        self.notify(ToastKind::Err, format!("打开失败：{e}"));
+                    }
+                    Task::none()
+                }
+            }
+            Message::AppWinOpened(Ok(_)) => Task::none(),
+            Message::AppWinOpened(Err(url)) => {
+                // 桌面窗口没成：回退系统浏览器标签页，别让用户点开没反应。
+                self.notify(
+                    ToastKind::Warn,
+                    "未找到支持独立窗口的浏览器，已用系统浏览器打开",
+                );
+                if let Err(e) = open::that_detached(&url) {
+                    self.notify(ToastKind::Err, format!("打开失败：{e}"));
+                }
+                Task::none()
+            }
+            Message::AppWindowSaved(Ok(())) => Task::none(),
+            Message::AppWindowSaved(Err(e)) => {
+                self.notify(ToastKind::Err, format!("保存打开方式失败：{e}"));
+                Task::none()
+            }
             Message::OpenUi(profile) => match self.url_of(&profile) {
-                Some(url) => Task::done(Message::OpenPath(url)),
+                Some(url) => Task::done(Message::OpenWebUi(url)),
                 None if self.running(&profile).is_some() => {
                     // 实例在跑但带 token 的地址还没从 stdout 里解析出来：
                     // 挂起等待，地址一到自动开（绝不拿裸地址开 404）。
@@ -905,6 +944,24 @@ impl Dshnext {
                     Task::none()
                 }
             },
+            Message::SetAppWindow(on) => {
+                // 启动页「打开方式」：切换即生效。config 与 draft 必须同写，
+                // 否则设置页「保存」会拿旧 draft 把开关悄悄打回去。
+                self.config.app_window = on;
+                self.cfg_draft.app_window = on;
+                let cfg = self.config.clone();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || crate::core::store::save(&cfg))
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |r: Result<(), String>| match r {
+                        Ok(()) => Message::AppWindowSaved(Ok(())),
+                        Err(e) => Message::AppWindowSaved(Err(e)),
+                    },
+                )
+            }
 
             // ---------- 插件 ----------
             Message::RefreshPlugins => {
@@ -1439,7 +1496,7 @@ impl Dshnext {
                 self.sys_log(&profile, format!("WebUI 地址：{url}"));
                 // 带 token 的地址到了，兑现等着的自动打开。
                 if self.pending_open.remove(&profile).is_some() {
-                    return Task::done(Message::OpenPath(url));
+                    return Task::done(Message::OpenWebUi(url));
                 }
             }
             CoreEvent::Exit { profile, code } => {

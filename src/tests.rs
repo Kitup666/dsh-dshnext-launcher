@@ -721,3 +721,102 @@ fn dirs_edit_prefill_close_and_guard() {
     drop(a.update(Message::ObClose));
     assert!(a.dirs_edit.is_none(), "取消应关表单");
 }
+
+// ---------- 桌面窗口模式（app_window / core::appwin） ----------
+
+#[test]
+fn appwin_extract_exe_from_cmd() {
+    use crate::core::appwin::extract_exe_from_cmd;
+    use std::path::PathBuf;
+    // Chrome/Edge 官方模板：带引号 + --single-argument 尾巴
+    let t = r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1"#;
+    assert_eq!(
+        extract_exe_from_cmd(t),
+        Some(PathBuf::from(r"C:\Program Files\Google\Chrome\Application\chrome.exe"))
+    );
+    // Edge 模板同款（ProgId 是 MSEdgeHTM）
+    let t = r#""C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --single-argument %1"#;
+    assert_eq!(
+        extract_exe_from_cmd(t),
+        Some(PathBuf::from(
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        ))
+    );
+    // 无引号 + 路径带空格：token 拼到第一个开关为止
+    assert_eq!(
+        extract_exe_from_cmd(r"C:\Program Files\BraveSoftware\brave.exe --single-argument %1"),
+        Some(PathBuf::from(r"C:\Program Files\BraveSoftware\brave.exe"))
+    );
+    // Firefox 模板：抽得出路径（白名单在 is_chromium 那边拦）
+    let t = r#""C:\Program Files\Mozilla Firefox\firefox.exe" -osint -url "%1""#;
+    assert_eq!(
+        extract_exe_from_cmd(t),
+        Some(PathBuf::from(r"C:\Program Files\Mozilla Firefox\firefox.exe"))
+    );
+    // 相对路径/空串不认：spawn 前必须能绝对定位
+    assert_eq!(extract_exe_from_cmd("chrome.exe --app=%1"), None);
+    assert_eq!(extract_exe_from_cmd(""), None);
+    assert_eq!(extract_exe_from_cmd("   "), None);
+}
+
+#[test]
+fn appwin_reg_sz_value_language_neutral() {
+    use crate::core::appwin::reg_sz_value;
+    // 英文系统：值名 (Default)
+    let en = "    (Default)    REG_SZ    \"C:\\Program Files\\Microsoft\\Edge\\msedge.exe\" --single-argument %1\r\n";
+    assert_eq!(
+        reg_sz_value(en),
+        Some(r#""C:\Program Files\Microsoft\Edge\msedge.exe" --single-argument %1"#.into())
+    );
+    // 中文系统：值名 (默认)——按值名匹配会挂，按 REG_SZ 才稳（本机实测）
+    let zh = "    (\u{9ed8}\u{8ba4})    REG_SZ    \"C:\\Program Files (x86)\\Microsoft\\Edge\\msedge.exe\" --single-argument %1\r\n";
+    assert_eq!(
+        reg_sz_value(zh),
+        Some(r#""C:\Program Files (x86)\Microsoft\Edge\msedge.exe" --single-argument %1"#.into())
+    );
+    // /v ProgId 形态
+    let prog = "    ProgId    REG_SZ    MSEdgeHTM\r\n";
+    assert_eq!(reg_sz_value(prog), Some("MSEdgeHTM".into()));
+    assert_eq!(reg_sz_value("no reg_sz here\r\n"), None);
+}
+
+#[test]
+fn appwin_chromium_whitelist() {
+    use crate::core::appwin::is_chromium;
+    use std::path::PathBuf;
+    assert!(is_chromium(&PathBuf::from(r"C:\x\chrome.exe")));
+    assert!(is_chromium(&PathBuf::from(r"C:\x\msedge.exe")));
+    assert!(is_chromium(&PathBuf::from(r"C:\x\BRAVE.EXE")), "大小写不敏感");
+    assert!(!is_chromium(&PathBuf::from(r"C:\x\firefox.exe")));
+    assert!(!is_chromium(&PathBuf::from(r"C:\x\notepad.exe")));
+}
+
+#[test]
+#[ignore = "真机探针：读本机注册表与 GBK 输出，cargo test -- --ignored --nocapture 单独跑"]
+fn appwin_resolve_on_this_machine() {
+    // 2026-09-07 本机实测：默认浏览器 MSEdgeHTM → 模板抽 exe → resolve 出
+    // C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe。
+    let exe = crate::core::appwin::resolve_chromium();
+    println!("resolve_chromium → {exe:?}");
+    let exe = exe.expect("本机默认浏览器 MSEdgeHTM 应解析出 Edge");
+    assert!(crate::core::appwin::is_chromium(&exe), "解析结果应是 Chromium 系");
+    assert!(exe.exists(), "解析出的 exe 应真实存在：{}", exe.display());
+}
+
+#[test]
+fn app_window_toggle_syncs_config_and_draft() {
+    // 启动页分段控件切换即生效：config 与 draft 必须同写，否则设置页
+    // 「保存」会拿旧 draft 把开关打回去。
+    let mut a = seeded_app();
+    assert!(!a.config.app_window, "默认浏览器标签页（现行为）");
+    drop(a.update(Message::SetAppWindow(true)));
+    assert!(a.config.app_window, "config 应立即生效");
+    assert!(a.cfg_draft.app_window, "draft 必须同步（防 SaveConfig 回滚）");
+    assert!(!a.cfg_dirty(), "同写后不应有脏改动");
+    // 设置页正常保存流程不受开关影响
+    drop(a.update(Message::SaveConfig));
+    drop(a.update(Message::ConfigSaved(Ok(()))));
+    assert!(a.config.app_window, "SaveConfig 不应把开关打回去");
+    drop(a.update(Message::SetAppWindow(false)));
+    assert!(!a.config.app_window && !a.cfg_draft.app_window);
+}

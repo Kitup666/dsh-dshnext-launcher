@@ -25,6 +25,10 @@ pub struct Config {
     pub open_mode: String,
     /// 启动成功后是否自动打开 WebUI
     pub auto_open: bool,
+    /// WebUI 以「桌面窗口」打开（浏览器 --app 独立窗口，无地址栏无标签栏）。
+    /// 关 = 系统浏览器标签页。仅 Chromium 系支持；非 Chromium 默认浏览器自动
+    /// 回退 Edge，都不可用时回退系统浏览器。
+    pub app_window: bool,
     /// 界面主题："light" | "dark" | "system"（跟随系统，启动时探测注册表）
     pub theme: String,
     /// 开机自启（HKCU Run 键，用户级无需管理员）
@@ -71,6 +75,7 @@ impl Default for Config {
             plugin_catalog_url: String::new(),
             open_mode: "window".into(),
             auto_open: true,
+            app_window: false,
             theme: "light".into(),
             autostart: false,
             tray: false,

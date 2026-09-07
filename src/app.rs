@@ -386,6 +386,16 @@ pub enum Message {
     ProcsLoaded(Vec<ProcStatus>),
     OpenPath(String),
     OpenUi(String),
+    /// 打开带 token 的 WebUI 地址：按 app_window 配置分流——浏览器标签页或
+    /// 浏览器 --app 独立窗口（桌面窗口模式，见 core::appwin）。
+    OpenWebUi(String),
+    /// 桌面窗口打开的落地/失败回调。Err(url) = 没解析到可用浏览器或启动失败，
+    /// url 供回退走系统浏览器。
+    AppWinOpened(Result<String, String>),
+    /// 启动页「打开方式」分段控件：切换即写 config+draft 并落盘。
+    SetAppWindow(bool),
+    /// SetAppWindow 落盘回调。失败只 toast 不回滚（开关意图下轮仍生效）。
+    AppWindowSaved(Result<(), String>),
 
     // 插件
     RefreshPlugins,
@@ -548,6 +558,7 @@ impl Dshnext {
         a.api_key != b.api_key
             || a.port != b.port
             || a.auto_open != b.auto_open
+            || a.app_window != b.app_window
             || a.always_on_top != b.always_on_top
             || a.autostart != b.autostart
             || a.tray != b.tray

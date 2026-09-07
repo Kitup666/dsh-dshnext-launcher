@@ -122,19 +122,55 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
 
     let meta = meta_strip(app, running, narrow, pal);
 
+    // 「打开方式」分段控件：桌面窗口 = 浏览器 --app 独立窗口（无地址栏无
+    // 标签栏）。与主题切换同款「选中即生效」；选中项发 Noop 防重复落盘。
+    let open_mode = row![
+        txt("打开方式").size(FS_TINY).color(pal.text_3),
+        widgets::segmented(
+            vec![
+                (
+                    "浏览器",
+                    !app.config.app_window,
+                    if app.config.app_window {
+                        Message::SetAppWindow(false)
+                    } else {
+                        Message::Noop
+                    },
+                ),
+                (
+                    "桌面窗口",
+                    app.config.app_window,
+                    if app.config.app_window {
+                        Message::Noop
+                    } else {
+                        Message::SetAppWindow(true)
+                    },
+                ),
+            ],
+            pal,
+        ),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
+
     // 窄窗口（win_size 来自 window 事件订阅）：操作组掉到标题下方一行，
     // 否则 row 里被挤爆的按钮直接裁掉（截图实测「停止运行/打开界面」消失）。
     // 阈值给宽一点：hero 是 左文案+下拉+双按钮，1150 逻辑像素以下就挤了。
+    // 打开方式单独一行：与操作组同行实测被挤到「桌面窗口」折行（出图确认）。
     let head: Element<'_, Message> = if narrow {
-        column![left, actions].spacing(16).into()
+        column![left, actions, open_mode].spacing(16).into()
     } else {
         // 英雄卡：圆角/内边距/阴影都比普通卡片高一档（ui::card::card_hero）。
         // 控件组紧跟文案（32px），不再贴右缘——两头重中间空的「哑铃布局」被 judge 点掉。
-        row![left, actions]
-            .spacing(32)
-            .width(Fill)
-            .align_y(Alignment::End)
-            .into()
+        column![
+            row![left, actions]
+                .spacing(32)
+                .width(Fill)
+                .align_y(Alignment::End),
+            open_mode,
+        ]
+        .spacing(14)
+        .into()
     };
     card::card_hero(
         column![head, widgets::divider(pal), meta].spacing(GAP_SECTION),
