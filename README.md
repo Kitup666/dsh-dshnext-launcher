@@ -25,7 +25,7 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 - **系统托盘** —— 关闭到托盘常驻；开机自启（HKCU Run 键，免管理员）。
 - **目录表单** —— 启动器数据目录与 `DSH_HOME` 可分别设置；实例运行中会先弹「停止并继续」确认框（防止换到一半吃到半新半旧的模块），确认后自动停完实例接着办。
 - **单实例** —— 重复启动会把已有窗口前置然后退出（自动化旗标 `--shot` 等不受限）。
-- **自更新**（源发布后生效）—— GitHub Releases 版本检查 + SHA-256 校验 + 运行中替换。
+- **自更新** —— 内置 GitHub Releases 更新源；设置页一键检查，版本比对 + SHA-256 校验（发布时附 `.sha256` 即启用）+ 运行中替换。
 - **诊断导出** —— 一键导出脱敏诊断文件（自动剔除 API Key）。
 - **细节** —— 深浅双主题（可跟随系统）、切页入场动画、Ctrl+1..6 快捷切页、无边框自绘标题栏（拖动/缩放/双击最大化）、窗口几何记忆。
 
@@ -42,7 +42,7 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 
 ## 安装
 
-从 [Releases](https://github.com/Kitup666/dsh-dshdesk/releases) 下载 `Dshnext_0.1.0_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 exe 拷走即用。
+从 [Releases](https://github.com/Kitup666/dsh-dshnext-launcher/releases) 下载 `Dshnext_0.1.0_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 exe 拷走即用。
 
 系统要求：Windows 10/11 x64。**无需**安装 Node.js、WebView2 或任何运行时。
 
@@ -72,7 +72,6 @@ NSIS 安装包：`makensis packaging/installer.nsi` → `packaging/Dshnext_0.1.0
 
 - [DESIGN.md](DESIGN.md) —— 设计决策与阶段日志（含与上一代的完整取舍清单）
 - [docs/architecture/current-state.md](docs/architecture/current-state.md) —— 现状架构快照
-- [DECISIONS.md](DECISIONS.md) —— 产品决策记录
 - [AGENTS.md](AGENTS.md) —— 开发/自动化踩坑纪律
 
 ## License

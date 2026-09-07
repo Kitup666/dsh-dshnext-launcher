@@ -66,7 +66,7 @@ pub fn view(app: &Dshnext) -> Element<'_, Message> {
     widgets::page_stack(reveal_at(head, t, PAGE_SHIFT, 0.0), body).into()
 }
 
-/// 离线安装卡（roadmap #9）：`<数据目录>\offline\` 里有约定命名的包才出现。
+/// 离线安装卡：`<数据目录>\offline\` 里有约定命名的包才出现。
 /// 断网机器把 node-*.zip / dsh*.tgz / pnpm*.tgz 拷进来即可完成全套部署。
 fn offline_card<'a>(
     app: &'a Dshnext,

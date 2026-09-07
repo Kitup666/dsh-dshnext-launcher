@@ -177,7 +177,7 @@ fn extract_node_zip(
     Ok(())
 }
 
-// ---- 离线安装（roadmap #9）：包由用户放进 store::offline_dir()，断网可装 ----
+// ---- 离线安装：包由用户放进 store::offline_dir()，断网可装 ----
 
 /// 离线包扫描结果：三类包各至多一个（同名取字典序最大——新版优先）。
 #[derive(Debug, Clone, Default)]

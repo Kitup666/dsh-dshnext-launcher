@@ -185,7 +185,6 @@ iced 是 Elm 架构：`State → view() → Element → 用户操作 → Message
 ```
 仓库根（原 Dshnext/，第一代删除后提升为根）
 ├── DESIGN.md                   # 设计决策与阶段日志（本文档）
-├── DECISIONS.md                # 产品决策记录（拍板项与结论）
 ├── AGENTS.md                   # 踩坑纪律（给接手的 agent）
 ├── docs/
 │   └── architecture/current-state.md   # 现状架构快照（活的架构地图）

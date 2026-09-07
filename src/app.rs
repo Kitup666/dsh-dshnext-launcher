@@ -214,7 +214,7 @@ pub struct Dshnext {
     /// 请求飞在半路时它还是空的，反复进环境页会重复发请求。
     pub versions_loading: bool,
 
-    // ---- 环境页离线包（roadmap #9）：进环境页时扫描 offline 目录 ----
+    // ---- 环境页离线包：进环境页时扫描 offline 目录 ----
     pub offline: Option<crate::core::installs::OfflinePacks>,
 
     // ---- 插件页 ----

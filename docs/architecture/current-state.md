@@ -4,7 +4,7 @@
 > 每条事实标 `OBSERVED`（源码直接可证）/ `DOCUMENTED`（有文档但未复核）/ `INFERRED`（由证据推断）/ `UNKNOWN`。
 > **本文档是活的架构地图，架构改动后同步更新**；DESIGN.md 是设计决策与阶段日志，两者分工不同。
 
-- **快照身份**：branch master；本文快照写于 2026-09-06（HEAD `2e90fe3` 前后），其后追加：目录迁移 + 进度条、runtime 守卫 + 单实例互斥、「停止并继续」、NSIS 重打（详见 git log 与 DECISIONS.md）。行数/Message 数等精确数字以该日快照为准。
+- **快照身份**：branch master；本文快照写于 2026-09-06（HEAD `2e90fe3` 前后），其后追加：目录迁移 + 进度条、runtime 守卫 + 单实例互斥、「停止并继续」、NSIS 重打（详见 git log）。行数/Message 数等精确数字以该日快照为准。
 - **快照日期**：2026-09-06（更新 2026-09-07）
 - **规模**：`src/` 共 8628 行 Rust；`core/` 1255 行（复用自上一代）；单 crate、单 exe。
 

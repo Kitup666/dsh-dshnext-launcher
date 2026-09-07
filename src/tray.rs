@@ -1,4 +1,4 @@
-//! 系统托盘（roadmap #6）：tray-icon 0.24，菜单「显示 / 退出」+ 左键点击显示窗口。
+//! 系统托盘：tray-icon 0.24，菜单「显示 / 退出」+ 左键点击显示窗口。
 //!
 //! 平台事实（查过源码/踩过才敢写）：
 //! - **iced 0.14 没有 window::hide/show**（iced_runtime 全文只有 minimize），所以
