@@ -1,6 +1,6 @@
 [package]
 name = "dshnext"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 description = "DshDesk — DeepSeek Harness 启动器（原生 Rust 重写，iced 0.14）"
 
@@ -46,6 +46,19 @@ dirs = "5"
 futures-util = "0.3"
 # 替代 tauri-plugin-opener：打开系统浏览器与文件管理器（DESIGN.md §5）
 open = "5"
+# 桌面窗口模式：WebView2 独立窗口。wry 封装 webview2-com；窗口用 windows crate
+# 手写原生 Win32（不能用 tao——tao 是 winit 分支，与 iced 主线程的 winit 在同进程
+# 抢全局状态会崩）。raw-window-handle 把我们的 HWND 适配给 wry。
+# 运行时依赖不破：WebView2Loader 由系统 Edge 提供，不打包内核。
+wry = "0.57"
+raw-window-handle = "0.6"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Com",
+] }
 # 首次启动引导的目录选择（Windows 走 IFileDialog，阻塞 API 在 spawn_blocking
 # 里调）。零运行时依赖不破：rfd 静态进 exe。
 rfd = "0.15"

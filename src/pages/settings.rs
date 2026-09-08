@@ -1,8 +1,9 @@
 //! 设置页（对应上一代 `pages/Settings.tsx`）：外观 / 模型访问 / 启动行为 / 下载源 / 关于。
 //!
-//! 与上一代的差异：**「Web 界面打开方式」项已移除**（DESIGN.md §5，改为一律
-//! 系统浏览器）。`config.json` 里的 `open_mode` 字段被忽略但不删——两代共用
-//! 同一个配置文件，删了会让上一代读不到自己的设置。
+//! 与上一代的差异：设置页不再有「Web 界面打开方式」下拉——该选项移到**启动页的
+//! 「打开方式」分段控件**（浏览器标签 / WebView2 桌面窗口，DESIGN.md §5.1）。
+//! `config.json` 里的 `open_mode` 字段被忽略但不删——两代共用同一个配置文件，
+//! 删了会让上一代读不到自己的设置。
 
 use crate::app::{Dshnext, Message};
 use crate::theme::{FS_TINY, Palette};

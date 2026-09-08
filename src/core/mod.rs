@@ -11,7 +11,6 @@
 //! 未被调用的函数先留着，别删——它们是上一代验证过的逻辑。
 #![allow(dead_code)]
 
-pub mod appwin;
 pub mod diag;
 pub mod envres;
 pub mod event;
@@ -23,3 +22,4 @@ pub mod procman;
 pub mod profiles;
 pub mod selfupdate;
 pub mod store;
+pub mod webview;

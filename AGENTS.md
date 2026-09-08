@@ -106,6 +106,17 @@
 32. **玻璃图元有「viewport == rect」逐位相等契约**（glass_pipeline `snap_to_physical`，2026-09-06）：顶点着色器画全屏大三角形，fragment 用 `phys = rect.xy + uv × rect.wh` 反推屏幕坐标，而 uv 是按 `draw_primitive` 传入的 bounds（→ set_viewport，小数照设）映射的——**bounds 与 u.rect 差半像素，整个坐标系被拉伸，1px 描边的 SDF 随机落到错误的行上**，表现为「卡片描边亮线随机缺某一段/某一条边」（实测还有弧形咬痕）。draw 与 prepare 必须传同一个取整到物理网格的矩形；draw 拿不到 scale，用 prepare 存的原子 static 中转。裁剪层可再放宽 1px（层里只有玻璃图元，圆角外 alpha=0）。
 33. **滚动页顶/底渐隐帏幕（`glass_pipeline::fade_veil`，shader 模式 2）是不透明背景场 + 带高 alpha 渐隐**，色 = bg_app + 光球，与窗外背景续上；顶帏带宽必须**窄于**内容顶 padding（现 14 < 44）——等宽的话稍滚一点首行标题就整个被吃掉（用户实测否掉 44）。帏幕不实现 update，stack 逆序派发返回 Ignored，滚轮/拖拽照常到达 scrollable。
 
+## WebView2 桌面窗口（core/webview.rs）
+
+「桌面窗口」打开方式：用系统 WebView2 开一个**启动器自己的顶层窗口**（独立图标/标题，dock 里不跟浏览器混）。踩过的坑：
+
+1. **不能用 wry 的 tao 窗口层**：tao 是 winit 分支，与 iced 主线程的 winit 在同进程抢全局状态（窗口类注册/DPI context），**副线程建 tao 窗口会原生崩溃**（不是 Rust panic，`any_thread`+COM 初始化都压不住，`panic=abort` 下整个进程没）。所以窗口用 `windows` crate 手写原生 Win32（RegisterClassEx/CreateWindowEx/GetMessage 泵），只借 wry 做 WebView2 那层（经 raw-window-handle 递 HWND）。
+2. **WebView2 的 COM 对象 + 窗口必须建在自带消息泵的独立线程**（同 tray.rs 约束），线程开头要 `CoInitializeEx(STA)`——缺它建 webview 环境时访问违例。主线程用 `PostMessageW(WM_APP_OPEN, Box<url>)` 跨线程投递（PostMessage 本身线程安全）。
+3. **每窗口 AUMID 走不通**：`ITaskbarList3::SetAppUserModelID` 在 windows 0.62 未投影（crate 里根本没这方法），`SetCurrentProcessExplicitAppUserModelID` 又是进程级会连主窗口一起改名。所以桌面窗口与主启动器同进程、暂共用 dock 组；要彻底独立成项得手写 COM vtable，不值。
+4. **图标**：`dsh.ico` 用 `include_bytes!` 内嵌，运行时解析 ICO 目录取最大图 → `CreateIconFromResourceEx` → 设进 `WNDCLASSEXW.hIcon/hIconSm`（类图标，`WM_GETICON` 查不到属正常）。
+5. **运行时检测**：`reg query` EdgeUpdate 客户端 GUID `{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`（HKLM WOW6432/HKLM/HKCU 任一存在即在）。缺则 `webview::open` 返回 Err、toast 提示安装，**按用户要求不静默回退浏览器**。
+6. 依赖：`wry` + `windows`（Foundation/WindowsAndMessaging/Gdi/LibraryLoader/Com）+ `raw-window-handle`。exe 体积 +~0.3MB（不打包内核，WebView2Loader 系统自带动态加载）。
+
 ## 后端复用（core/，抄自第一代）
 
 1. **`src/core/` 是从第一代 `src-tauri/src/` 复制的，业务逻辑一行不改。** 改完 `grep -rn tauri src/core` 必须为零。唯一批量改动是模块路径 `crate::xxx` → `crate::core::xxx`。

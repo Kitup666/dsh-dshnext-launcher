@@ -122,8 +122,8 @@ fn hero<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> {
 
     let meta = meta_strip(app, running, narrow, pal);
 
-    // 「打开方式」分段控件：桌面窗口 = 浏览器 --app 独立窗口（无地址栏无
-    // 标签栏）。与主题切换同款「选中即生效」；选中项发 Noop 防重复落盘。
+    // 「打开方式」分段控件：桌面窗口 = WebView2 独立窗口（自己的图标 + 独立
+    // AppUserModelID，见 core::webview）。与主题切换同款「选中即生效」；选中项发 Noop 防重复落盘。
     let open_mode = row![
         txt("打开方式").size(FS_TINY).color(pal.text_3),
         widgets::segmented(

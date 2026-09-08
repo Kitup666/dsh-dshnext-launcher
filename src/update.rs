@@ -897,19 +897,19 @@ impl Dshnext {
                 Task::none()
             }
             Message::OpenWebUi(url) => {
-                // 带 token 的 WebUI 地址按 app_window 分流：桌面窗口模式
-                // 起浏览器 --app 独立窗口（resolve 失败会带回 url 回退），
-                // 否则与 OpenPath 同款系统浏览器标签页。
+                // 带 token 的 WebUI 地址按 app_window 分流：桌面窗口模式走
+                // WebView2 独立窗口（core::webview），否则系统浏览器标签页。
                 if self.config.app_window {
-                    // Err 载荷约定恒为 url（供回退开浏览器），join 错误也一样。
-                    let url2 = url.clone();
                     Task::perform(
                         async move {
-                            tokio::task::spawn_blocking(move || crate::core::appwin::open(url2))
+                            tokio::task::spawn_blocking(move || crate::core::webview::open(url))
                                 .await
-                                .unwrap_or_else(|_| Err(url))
+                                .unwrap_or_else(|e| Err(e.to_string()))
                         },
-                        Message::AppWinOpened,
+                        |r: Result<(), String>| match r {
+                            Ok(()) => Message::Noop,
+                            Err(e) => Message::Notify(ToastKind::Err, e),
+                        },
                     )
                 } else {
                     if let Err(e) = open::that_detached(&url) {
@@ -917,18 +917,6 @@ impl Dshnext {
                     }
                     Task::none()
                 }
-            }
-            Message::AppWinOpened(Ok(_)) => Task::none(),
-            Message::AppWinOpened(Err(url)) => {
-                // 桌面窗口没成：回退系统浏览器标签页，别让用户点开没反应。
-                self.notify(
-                    ToastKind::Warn,
-                    "未找到支持独立窗口的浏览器，已用系统浏览器打开",
-                );
-                if let Err(e) = open::that_detached(&url) {
-                    self.notify(ToastKind::Err, format!("打开失败：{e}"));
-                }
-                Task::none()
             }
             Message::AppWindowSaved(Ok(())) => Task::none(),
             Message::AppWindowSaved(Err(e)) => {

@@ -1,6 +1,6 @@
 # DshDesk Native (Dshnext)
 
-DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**（iced 0.14 + wgpu，无 WebView，无浏览器内核）。
+DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**（iced 0.14 + wgpu，界面无 WebView、无浏览器内核；仅「桌面窗口」模式按需调系统 WebView2，不打包内核）。
 
 管理 dsh 的安装与版本切换、多 profile（配置/插件互相隔离）、环境托管（便携 Node.js / pnpm），带系统托盘、开机自启、崩溃自愈、目录迁移。单 exe 零运行时依赖，空闲时 CPU/GPU/出帧全部归零。
 
@@ -20,7 +20,7 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 
 - **版本/profile 管理** —— 每个 profile 一套 cordis 配置 + 插件清单（`package.json`），互不干扰；新建/重命名/复制/删除；启动/停止/崩溃自动重启（指数退避）。共享一个 pnpm 依赖仓库，同插件多 profile 只存一份。
 - **插件** —— 市场（npm `keywords:dsh-plugin` 检索）+ 手动安装（npm 包名或 `github:owner/repo`），装进 profile 隔离，不动官方 bundle。
-- **WebUI 两种打开方式** —— 系统浏览器标签页，或「桌面窗口」：调用已装浏览器的 `--app` 模式开无地址栏无标签栏的独立窗口（启动页可切，默认浏览器是 Chromium 系就跟随，Firefox 等自动回退 Edge）。启动器不嵌任何内核，两种方式下都保持单进程。
+- **WebUI 两种打开方式** —— 系统浏览器标签页，或「桌面窗口」：用系统 **WebView2** 开一个独立窗口（自己的图标、自己的标题栏、任务栏/MyDockFinder 里不再跟浏览器混在一起）。启动页可切。WebView2 运行时 Win10/11 自带，**不打包内核**；缺运行时则提示安装、不静默回退。
 - **环境托管** —— 便携 Node.js / dsh / pnpm 装进私有 runtime 目录，与系统全局互不污染；版本列表拉取、一键安装/切换/卸载；**离线部署**：把安装包放进 `数据目录/offline/` 即可断网安装。
 - **数据目录可迁移** —— 首次启动引导 + 随时在环境页改；迁移是两阶段的（先全量复制后删源，单文件 3 次退避重试），失败原地可重试，进度条实时显示。NTFS junction 正确重建。
 - **系统托盘** —— 关闭到托盘常驻；开机自启（HKCU Run 键，免管理员）。
@@ -41,9 +41,11 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 
 空闲零出帧是靠「零订阅」纪律保证的：动画期间才挂帧订阅、有实例才挂轮询，其余时刻事件驱动画到不动为止（探针脚本在 `phase0/`，可复现）。
 
+「桌面窗口」模式（WebView2）另计：它渲染 dsh 网页，进程树 ~150-200MB 记在 WebView2 名下，启动器本体仍维持上表的单进程数字；这是「要网页 UI 又要独立窗口」的固有代价，不想用就切回浏览器标签。
+
 ## 安装
 
-从 [Releases](https://github.com/Kitup666/dsh-dshnext-launcher/releases) 下载 `Dshnext_0.1.9_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 exe 拷走即用。
+从 [Releases](https://github.com/Kitup666/dsh-dshnext-launcher/releases) 下载 `Dshnext_0.1.10_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 exe 拷走即用。
 
 系统要求：Windows 10/11 x64。**无需**安装 Node.js、WebView2 或任何运行时。
 
@@ -67,7 +69,7 @@ cargo run --release -- --page env --shot out.png --after 4000   # 自截图
 
 Rust 1.92+（edition 2024）。构建产物静态链 CRT（`+crt-static` 已固化在 `.cargo/config.toml`），`dumpbin /DEPENDENTS` 只剩系统 DLL。
 
-NSIS 安装包：`makensis packaging/installer.nsi` → `packaging/Dshnext_0.1.9_x64-setup.exe`（装/卸全流程实测：包内 exe 与构建产物 SHA-256 一致，卸载后目录/开始菜单/注册表三处全净）。
+NSIS 安装包：`makensis packaging/installer.nsi` → `packaging/Dshnext_0.1.10_x64-setup.exe`（装/卸全流程实测：包内 exe 与构建产物 SHA-256 一致，卸载后目录/开始菜单/注册表三处全净）。
 
 ## 文档
 

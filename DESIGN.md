@@ -280,13 +280,19 @@ struct Dshnext {
 
 这是**功能上唯一的退步**，需在 README 里明说。
 
-### 5.1 桌面窗口模式（2026-09-07 增补）
+### 5.1 桌面窗口模式（2026-09-07 首做 `--app`，2026-09-08 改 WebView2）
 
-上面三选一漏了第四个选项：**浏览器自己的 `--app` 启动参数**。用户要「客户端打开」但反感套壳，这条恰好两头都占——`--app=<url>` 让已装的 Chromium 系浏览器开一个无地址栏、无标签栏的独立窗口，观感即客户端；启动器只是换一种方式喊起浏览器，不嵌内核、零新增依赖（浏览器解析走 `reg` 子进程，与 platform.rs 同款纪律，见 `core/appwin.rs`）。跑得动 WebUI 的壳重量下限就是一整个浏览器内核（WebView2 199 MB 实测），「轻量套壳」不存在；`--app` 把壳的重量全部记在浏览器进程名下，启动器仍 88.5 MB 单进程。
+用户要「客户端打开」又反感套壳。先做了第四选项 `--app=<url>`（让已装 Chromium 浏览器开无地址栏独立窗口，启动器零依赖）——但实测两个硬伤：**任务栏/MyDockFinder 把它归到浏览器名下**（进程是 msedge.exe），且**那条标题栏是浏览器画的、换不掉**。PWA 能治（独立 AUMID + 图标 + WCO 无边框），但 token 每次启动都变、装不了固定起始地址，死路。
 
-打开链路收口在 `Message::OpenWebUi`（所有带 token 地址的打开都走它）：`config.app_window` 开 → 解析浏览器（默认浏览器是 Chromium 系跟随它，否则回退 Edge，都不可用回退系统浏览器并 toast）→ 直起进程传 `--app=<url>`；关 → 与原来同款 `open::that_detached`。启动页 hero 的「打开方式」分段控件切换即生效即落盘（同时写 config 与 cfg_draft，防设置页保存时旧草稿回滚）。
+于是改用 **WebView2**（`core/webview.rs`）：这是**启动器自己的顶层窗口**（进程 dshnext.exe、挂 DSH.ico、标题「DshDesk — WebUI」），所以 dock 里独立成项、边框归自己。代价是多一棵 WebView2 进程树（~150-200MB，同内核，跑网页躲不掉——见上「轻量套壳不存在」）。WebView2 运行时 Win10/11 自带，**不打包内核**，仍单 exe；缺运行时直接报错、按用户要求不做静默回退。
 
-已知边界（明说不修）：任务栏图标是浏览器的（PWA 要固定起始地址，token 每次启动都变，此路不通）；连点「打开界面」可能开多个窗口，不做去重。
+实现要点（都踩过才写）：
+- **不能用 tao/wry 的窗口层**：tao 是 winit 分支，与 iced 主线程的 winit 在同进程抢全局状态（窗口类/DPI），副线程建 tao 窗口会原生崩溃。所以窗口用 `windows` crate **手写原生 Win32**（RegisterClass/CreateWindowEx/GetMessage 泵），只借 wry 做 WebView2 那层（经 raw-window-handle 递 HWND）。
+- WebView2 的 COM 对象 + 窗口必须建在**自带消息泵的独立线程**（同 tray.rs 约束），且线程要先 `CoInitializeEx`。主线程用 `PostMessageW(WM_APP_OPEN, Box<url>)` 跨线程投递。
+- 打开链路仍收口 `Message::OpenWebUi`：`config.app_window` 开 → `webview::open`；关 → `open::that_detached`。启动页「打开方式」分段控件切换即生效即落盘（config+draft 同写）。
+- 图标：`dsh.ico` 内嵌，运行时解析 ICO 目录取最大图 → `CreateIconFromResourceEx` → 类图标。
+
+已知边界：单窗口复用（多 profile 共用一个，再开导航到新 token）；关窗=隐藏不销毁；与主启动器同进程，dock 里是否进一步拆独立项需每窗口 AUMID（`ITaskbarList3::SetAppUserModelID`，但 windows 0.62 未投影该方法，暂不做）。
 
 ---
 
