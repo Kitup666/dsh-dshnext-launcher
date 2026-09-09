@@ -39,6 +39,7 @@ goto :collect
 
 :launch
 taskkill /F /IM dshnext.exe >nul 2>&1
+taskkill /F /IM DeepseekHarness.exe >nul 2>&1
 rem After taskkill, Windows needs a moment to release the exe file lock.
 rem Cargo build right away can hit os error 5 (access denied); in a
 rem double-click scenario the console flashes and it LOOKS like "no rebuild".
@@ -49,7 +50,9 @@ rem pause on failure so it can be read; then launch (build step is a no-op).
 rem Pausing on the app's own exit code would be wrong: taskkill-terminated
 rem dshnext exits 1, which is not a build failure.
 echo [dev] building %PROFILE% ...
-cargo build %PROFILE%
+rem --workspace: the desktop-window host (webui/DeepseekHarness.exe) is a second
+rem member now; ensure_host spawns it from the same dir, so it must be built too.
+cargo build %PROFILE% --workspace
 if errorlevel 1 (
     echo [dev] build FAILED - see errors above
     pause

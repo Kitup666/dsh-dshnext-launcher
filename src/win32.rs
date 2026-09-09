@@ -6,10 +6,17 @@
 
 /// 显示并前置主窗口。
 pub fn show_main_window(title: &str) {
+    if !raise_if_exists(title) {
+        log::warn!("托盘显示：找不到主窗口（标题 {title:?}）");
+    }
+}
+
+/// 窗口存在则显示并前置，返回是否存在。桌面窗口宿主用它做「已有窗口→复用」
+/// （启动器 open() 与独立双击两条路都靠它去重）。
+pub fn raise_if_exists(title: &str) -> bool {
     unsafe {
         let Some(hwnd) = find_window(title) else {
-            log::warn!("托盘显示：找不到主窗口（标题 {title:?}）");
-            return;
+            return false;
         };
         ShowWindow(hwnd, SW_SHOW);
         // SetForegroundWindow 在调用方非前台时静默失败（AGENTS.md 坑 1）：
@@ -24,6 +31,7 @@ pub fn show_main_window(title: &str) {
         } else {
             SetForegroundWindow(hwnd);
         }
+        true
     }
 }
 

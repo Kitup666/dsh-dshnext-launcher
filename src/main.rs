@@ -12,21 +12,10 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app;
-mod bridge;
-mod core;
-mod pages;
-mod theme;
-mod tray;
-mod ui;
-mod update;
-mod win32;
-
-#[cfg(test)]
-mod tests;
-
-use app::{Dshnext, Mode, Shot};
-use pages::Page;
+use dshnext::app::{self, Dshnext, Mode, Shot};
+use dshnext::bridge;
+use dshnext::pages::{self, Page};
+use dshnext::ui;
 use std::time::Duration;
 
 fn main() -> iced::Result {
@@ -50,9 +39,9 @@ fn main() -> iced::Result {
     // 主题解析：--theme 参数 > config.theme > 深色兜底。此前 config.theme 只
     // 落盘从不回读（重启后永远回到默认）——这次修掉。
     // 路径解析必须先于 config 读取：pointer 文件决定 config 去哪找。
-    let data_dir = crate::core::store::init_data_dir();
-    let mut cfg = crate::core::store::load();
-    crate::core::envres::init_home_from_config(&cfg.dsh_home);
+    let data_dir = dshnext::core::store::init_data_dir();
+    let mut cfg = dshnext::core::store::load();
+    dshnext::core::envres::init_home_from_config(&cfg.dsh_home);
     // 首次启动（config.json 不存在）会弹目录引导；--onboarding 强制弹出供出图。
     let force_onboarding = flag("--onboarding");
     // --dirs-edit：直接开在设置页「修改目录」表单上（编辑模式），出图用。
@@ -76,17 +65,17 @@ fn main() -> iced::Result {
             dest.display(),
             home.display()
         );
-        match crate::core::migrate::relocate(dest, home, custom) {
+        match dshnext::core::migrate::relocate(dest, home, custom) {
             Ok(w) if w.is_empty() => log::info!("migrate done"),
             Ok(w) => log::info!("migrate done, {} 项留在旧位置：{w:?}", w.len()),
             Err(e) => log::error!("migrate FAILED: {e}"),
         }
         // 迁移改道了数据目录：重读 config，窗口几何/主题按新位置的来。
-        cfg = crate::core::store::load();
+        cfg = dshnext::core::store::load();
     }
     let resolve = |s: &str| match s {
         "light" => Mode::Light,
-        "system" if crate::core::platform::system_prefers_light() => Mode::Light,
+        "system" if dshnext::core::platform::system_prefers_light() => Mode::Light,
         _ => Mode::Dark,
     };
     let mode = match opt("--theme").as_deref() {
@@ -108,7 +97,7 @@ fn main() -> iced::Result {
         || flag("--e2e")
         || opt("--migrate-to").is_some()
         || migrate_go.is_some();
-    if !automation && crate::win32::acquire_single_instance(crate::app::WINDOW_TITLE).is_err() {
+    if !automation && dshnext::win32::acquire_single_instance(dshnext::app::WINDOW_TITLE).is_err() {
         return Ok(()).into();
     }
 
@@ -149,7 +138,7 @@ fn main() -> iced::Result {
     // 必须在 application 之前——view 第一次跑就可能要 sink()。
     bridge::init();
     // 清掉上次自更新换身留下的 exe.old（此刻运行中的已经是新 exe）。
-    crate::core::selfupdate::cleanup_old();
+    dshnext::core::selfupdate::cleanup_old();
     // 注意：置顶不能在这里设——窗口还没建出来，FindWindowW 落空。
     // 在 update 的 WindowEvent::Opened 里按 config.always_on_top 应用。
 
@@ -194,11 +183,11 @@ fn main() -> iced::Result {
             }
             // --stop-dialog：开在「停止并继续」确认框上（守卫视觉出图用）。
             if force_stop_dialog {
-                app.dialog = Some(crate::ui::modal::Dialog::StopAndContinue("安装 dsh".into()));
+                app.dialog = Some(dshnext::ui::modal::Dialog::StopAndContinue("安装 dsh".into()));
             }
             if force_dirs_edit {
                 app.dirs_edit = Some(app::Onboarding::for_edit(&app.config.dsh_home));
-                crate::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+                dshnext::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
             }
             // --migrate-go <目标目录>：开在「转移进行中」的表单上（自动填目标，
             // 第一次 update 补发确认）。给进度条出图用——实际迁移要用
@@ -207,7 +196,7 @@ fn main() -> iced::Result {
                 let mut ob = app::Onboarding::for_edit(&app.config.dsh_home);
                 ob.launcher_dir = dest.clone();
                 app.dirs_edit = Some(ob);
-                crate::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+                dshnext::app::DIRS_EDIT_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
                 app.boot_migrate = true;
             }
             app
@@ -287,26 +276,3 @@ fn app_background(state: &Dshnext, _theme: &iced::Theme) -> iced::theme::Style {
     }
 }
 
-/// 把 `window::screenshot` 的结果写成 PNG。`--shot` 用。
-pub fn write_png(path: &str, shot: &iced::window::Screenshot) {
-    let file = match std::fs::File::create(path) {
-        Ok(f) => f,
-        Err(e) => {
-            log::error!("创建 {path} 失败：{e}");
-            return;
-        }
-    };
-    let mut enc = png::Encoder::new(
-        std::io::BufWriter::new(file),
-        shot.size.width,
-        shot.size.height,
-    );
-    enc.set_color(png::ColorType::Rgba);
-    enc.set_depth(png::BitDepth::Eight);
-    if let Err(e) = enc
-        .write_header()
-        .and_then(|mut w| w.write_image_data(&shot.rgba))
-    {
-        log::error!("写 PNG 失败：{e}");
-    }
-}

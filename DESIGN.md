@@ -284,15 +284,17 @@ struct Dshnext {
 
 用户要「客户端打开」又反感套壳。先做了第四选项 `--app=<url>`（让已装 Chromium 浏览器开无地址栏独立窗口，启动器零依赖）——但实测两个硬伤：**任务栏/MyDockFinder 把它归到浏览器名下**（进程是 msedge.exe），且**那条标题栏是浏览器画的、换不掉**。PWA 能治（独立 AUMID + 图标 + WCO 无边框），但 token 每次启动都变、装不了固定起始地址，死路。
 
-于是改用 **WebView2**（`core/webview.rs`）：这是**启动器自己的顶层窗口**（进程 dshnext.exe、挂 DSH.ico、标题「DshDesk — WebUI」），所以 dock 里独立成项、边框归自己。代价是多一棵 WebView2 进程树（~150-200MB，同内核，跑网页躲不掉——见上「轻量套壳不存在」）。WebView2 运行时 Win10/11 自带，**不打包内核**，仍单 exe；缺运行时直接报错、按用户要求不做静默回退。
+于是改用 **WebView2**（`core/webview.rs`）：这是**启动器自己的顶层窗口**，边框归自己、挂 DSH.ico。代价是多一棵 WebView2 进程树（~150-200MB，同内核，跑网页躲不掉——见上「轻量套壳不存在」）。WebView2 运行时 Win10/11 自带，**不打包内核**；缺运行时直接报错、按用户要求不做静默回退。
+
+**2026-09-09 演进到独立二进制**：身份识别先后试过 同进程线程 → `--webview-host` 子进程 → 中继孤儿化 → 硬链接改名，全数被否——dock（MyDockFinder）与任务管理器按**进程/文件名**归组，且**图标与显示名读 exe 内嵌资源**，硬链接与启动器同字节永远甩不开。终态：宿主是 workspace 成员 `webui/`，产物 **`DeepseekHarness.exe`**（窗口标题/程序名/AUMID/exe 名四位一体），自带鲸鱼图标与 FileDescription，链接器剥掉未引用的 iced 后仅 ~1.9 MB。附带红利：可**双击独立打开**（读数据目录 `webui-url.txt` 的最近 token 地址——「token 不落盘」纪律的有意例外）；中继方案随之退役。
 
 实现要点（都踩过才写）：
 - **不能用 tao/wry 的窗口层**：tao 是 winit 分支，与 iced 主线程的 winit 在同进程抢全局状态（窗口类/DPI），副线程建 tao 窗口会原生崩溃。所以窗口用 `windows` crate **手写原生 Win32**（RegisterClass/CreateWindowEx/GetMessage 泵），只借 wry 做 WebView2 那层（经 raw-window-handle 递 HWND）。
-- WebView2 的 COM 对象 + 窗口必须建在**自带消息泵的独立线程**（同 tray.rs 约束），且线程要先 `CoInitializeEx`。主线程用 `PostMessageW(WM_APP_OPEN, Box<url>)` 跨线程投递。
+- WebView2 的 COM 对象 + 窗口必须建在**自带消息泵的线程**（宿主进程的主线程；同 tray.rs 约束），要先 `CoInitializeEx`。URL 经 `PostMessageW(WM_APP_OPEN, Box<url>)` 投递进泵。
 - 打开链路仍收口 `Message::OpenWebUi`：`config.app_window` 开 → `webview::open`；关 → `open::that_detached`。启动页「打开方式」分段控件切换即生效即落盘（config+draft 同写）。
 - 图标：`dsh.ico` 内嵌，运行时解析 ICO 目录取最大图 → `CreateIconFromResourceEx` → 类图标。
 
-已知边界：单窗口复用（多 profile 共用一个，再开导航到新 token）；关窗=隐藏不销毁；与主启动器同进程，dock 里是否进一步拆独立项需每窗口 AUMID（`ITaskbarList3::SetAppUserModelID`，但 windows 0.62 未投影该方法，暂不做）。
+已知边界：单窗口复用（多 profile 共用一个，再开导航到新 token）；关窗=隐藏不销毁；独立打开的窗口不经管道——close_stops 对它是空谈，启动器「打开界面」遇已存在的独立窗口只做前置、不重导航；每窗口 AUMID 走属性存储（`SHGetPropertyStoreForWindow`，见 AGENTS），但那只影响原生任务栏分组，dock 独立靠的就是独立进程本身。
 
 ---
 

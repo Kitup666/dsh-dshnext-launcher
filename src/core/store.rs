@@ -42,6 +42,9 @@ pub struct Config {
     pub update_url: String,
     /// harness 异常退出时自动重启（指数退避，最多连 3 次）
     pub auto_restart: bool,
+    /// 关闭客户端（真退出，非驻留托盘）或关闭桌面窗口时，顺带停止在跑的
+    /// dsh 服务。关 = dsh 生命周期与启动器解耦，退出后服务继续跑。
+    pub close_stops: bool,
     /// dsh-home（DSH_HOME，profiles 与 harness 数据的根）。空串 = 默认
     /// `<数据目录>/home`。首次启动引导里设置；自定义时存绝对路径。
     pub dsh_home: String,
@@ -84,6 +87,7 @@ impl Default for Config {
             always_on_top: false,
             update_url: String::new(),
             auto_restart: false,
+            close_stops: true,
             dsh_home: String::new(),
             window: None,
             last_boot_ms: None,
@@ -149,6 +153,14 @@ pub fn data_dir() -> PathBuf {
         }
     }
     boot_dir()
+}
+
+/// 最近一次 WebUI 地址（含 token），供桌面窗口双击独立打开时读取。
+/// ⚠️ 这是对「token 不落盘」纪律的有意例外：独立启动别无他法（token 只在 dsh
+/// 启动时的 stdout 出现一次）。文件在用户级数据目录（LOCALAPPDATA，ACL 天然
+/// 只本用户可读写），覆盖式写入。读方：`webview::standalone_url`。
+pub fn save_webui_url(url: &str) {
+    let _ = fs::write(data_dir().join("webui-url.txt"), url.as_bytes());
 }
 
 /// 首次启动引导确认：本次会话即刻改道数据目录。

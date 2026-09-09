@@ -1,0 +1,26 @@
+[package]
+name = "deepseekharness-webui"
+version.workspace = true
+edition.workspace = true
+description = "DeepseekHarness 桌面窗口宿主（WebView2 独立进程，与启动器同源码不同皮）"
+
+# 独立 bin 的意义就在身份：自己的文件名、自己的内嵌图标/版本信息，
+# dock（按 exe 文件名归组）、任务管理器、任务栏天然与 dshnext.exe 分开。
+[[bin]]
+name = "DeepseekHarness"
+path = "src/main.rs"
+
+# winresource 读这段写进 exe 的 StringFileInfo（任务管理器/dock 显示的名字）。
+[package.metadata.winresource]
+FileDescription = "DeepseekHarness"
+ProductName = "DeepseekHarness"
+OriginalFilename = "DeepseekHarness.exe"
+InternalName = "DeepseekHarness"
+
+[dependencies]
+dshnext = { path = ".." }
+env_logger = "0.11"
+log = "0.4"
+
+[build-dependencies]
+winresource = "0.1"

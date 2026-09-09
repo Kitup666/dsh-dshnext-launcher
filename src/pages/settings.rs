@@ -180,11 +180,17 @@ fn launch_behavior<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, M
                 Message::CfgAutoRestart,
                 pal
             ),
+            widgets::check(
+                "关闭客户端或桌面窗口时一并停止 dsh 服务",
+                app.cfg_draft.close_stops,
+                Message::CfgCloseStops,
+                pal
+            ),
             // 说明文字与卡片内容列同左边缘（不缩进到复选框标签下）。早先按「对齐它
             // 解释的那个标签」缩进了 24px（方框 15 + 间距 9），量下来确实对齐了标签，
             // 但它是整张卡里唯一不在内容列上的一行——同页另两处 field 的说明都在
             // 内容列上，扫下来就这一行突出来。表单卡里共享一条左边缘比「对齐标签」重要。
-            txt("Web 界面打开方式在启动页选择（浏览器标签或桌面窗口）；自启写当前用户 Run 键；托盘驻留不受关窗影响；自动重启按 2/4/8s 退避，连崩 3 次停。")
+            txt("Web 界面打开方式在启动页选择（浏览器标签或桌面窗口）；自启写当前用户 Run 键；托盘驻留不受关窗影响；自动重启按 2/4/8s 退避，连崩 3 次停；联动停止会先停完所有实例再退出或收掉桌面窗口。")
                 .size(FS_TINY)
                 .color(pal.text_3),
         ]

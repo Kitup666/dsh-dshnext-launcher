@@ -274,33 +274,26 @@ impl Dshnext {
                 self.cfg_draft.auto_restart = v;
                 Task::none()
             }
+            Message::CfgCloseStops(v) => {
+                self.cfg_draft.close_stops = v;
+                Task::none()
+            }
             Message::CheckUpdate => {
                 let url = self.config.effective_update_url().to_string();
                 Task::perform(crate::core::selfupdate::latest(url), Message::UpdateChecked)
             }
             Message::UpdateChecked(result) => match result {
                 Ok(info) => {
-                    if crate::core::selfupdate::newer(&info.version, env!("CARGO_PKG_VERSION")) {
+                    let newer = crate::core::selfupdate::newer(&info.version, env!("CARGO_PKG_VERSION"));
+                    let webui_missing = crate::core::selfupdate::webui_sibling()
+                        .map_or(true, |p| !p.exists());
+                    // 版本更新要下；版本已最新但宿主 exe 缺失、源里又有 → 补下载
+                    // （0.1.10 的旧启动器只换 dshnext.exe，重启后靠这条补齐）。
+                    if newer || (webui_missing && info.webui_url.is_some()) {
                         self.busy = Some(format!("正在下载更新 v{}…", info.version));
                         self.update_busy = true;
                         Task::perform(
-                            async move {
-                                let tmp =
-                                    crate::core::store::data_dir().join("update/dshnext.exe.new");
-                                crate::core::selfupdate::download_to(&info.exe_url, &tmp).await?;
-                                let expected = if let Some(u) = &info.sha256 {
-                                    Some(crate::core::selfupdate::download_string(u).await?)
-                                } else {
-                                    None
-                                };
-                                let path = tmp.clone();
-                                tokio::task::spawn_blocking(move || {
-                                    crate::core::selfupdate::verify_hash(&path, expected.as_deref())
-                                })
-                                .await
-                                .map_err(|e| e.to_string())??;
-                                Ok((info.version, tmp))
-                            },
+                            crate::core::selfupdate::update_step(info),
                             Message::UpdateReady,
                         )
                     } else {
@@ -320,12 +313,17 @@ impl Dshnext {
                 self.busy = None;
                 self.update_busy = false;
                 match result {
-                    Ok((version, path)) => {
+                    Ok((version, main, webui)) => {
                         // 换身是本地文件操作，同步做掉（快），成败都明确告知。
-                        match crate::core::selfupdate::apply_swap(&path) {
-                            Ok(()) => self.notify(
+                        match crate::core::selfupdate::apply_swap(main.as_deref(), webui.as_deref())
+                        {
+                            Ok(()) if main.is_some() => self.notify(
                                 ToastKind::Ok,
                                 format!("已更新到 v{version}，重启启动器后生效"),
+                            ),
+                            Ok(()) => self.notify(
+                                ToastKind::Ok,
+                                "桌面窗口程序已补齐，无需重启",
                             ),
                             Err(e) => self.notify(ToastKind::Err, format!("更新落位失败：{e}")),
                         }
@@ -732,6 +730,9 @@ impl Dshnext {
                 let via_restart = self.restarting.contains(&profile);
                 match probe {
                     crate::core::platform::PortProbe::Free => {
+                        // 接管成功（或本来就干净）：清掉一次性标记，别把名字留到
+                        // 下回真冲突时误判成「接管后仍占用」。
+                        self.takeover.remove(&profile);
                         self.busy = Some(format!("正在启动 {profile}…"));
                         let tx = bridge::sink();
                         let procs = bridge::procs();
@@ -746,15 +747,34 @@ impl Dshnext {
                         )
                     }
                     crate::core::platform::PortProbe::Http if !own && !via_restart => {
-                        // 端口被别的（或上次残留的）dsh 占着：token 只在它启动时
-                        // 的 stdout 里，我们拿不到，裸地址开出来是 401——别开。
+                        // 端口被残留的 dsh（上次没停干净的 node 树）占着：token 只在
+                        // 它启动时的 stdout 里，拿不到就没法开它的界面。与其让用户去
+                        // 任务管理器杀 node，直接结束端口属主进程再走一遍启动。
+                        // 只接管一次（takeover 集合防循环），第二次仍占用才回落到提示。
+                        if self.takeover.contains(&profile) {
+                            self.takeover.remove(&profile);
+                            self.notify(
+                                ToastKind::Warn,
+                                format!("端口 {port} 接管后仍被占用，请手动结束占用进程或改端口"),
+                            );
+                            return Task::none();
+                        }
+                        self.takeover.insert(profile.clone());
                         self.notify(
-                            ToastKind::Warn,
-                            format!(
-                                "端口 {port} 已有 WebUI 在运行，但本启动器拿不到它的登录地址                                 （token 只在 dsh 启动输出里）。请用原入口打开；                                 若是启动器残留的实例，停止它后再启动即可"
-                            ),
+                            ToastKind::Info,
+                            format!("端口 {port} 被残留实例占用，正在结束旧进程并接管…"),
                         );
-                        Task::none()
+                        let p = profile.clone();
+                        Task::perform(
+                            async move {
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    crate::core::platform::kill_port_owner(port)
+                                })
+                                .await;
+                                tokio::time::sleep(Duration::from_millis(800)).await;
+                            },
+                            move |_| Message::Start(p),
+                        )
                     }
                     crate::core::platform::PortProbe::Http if via_restart => {
                         // 崩掉的实例残留子进程还占着口：退避重试，计数并入序列。
@@ -846,12 +866,32 @@ impl Dshnext {
                         self.procs.retain(|p| p.profile != profile);
                         self.urls.remove(&profile);
                         self.notify(ToastKind::Ok, format!("已停止 {profile}"));
-                        Task::done(Message::PollProcs)
                     }
                     Err(e) => {
                         self.notify(ToastKind::Err, format!("停止失败：{e}"));
-                        Task::none()
                     }
+                }
+                // 退出收尾：等最后一个 Stopped（成功或失败都算）落定再真关窗，
+                // 否则退出会卡在「还在停」的状态。
+                if self.exit_after_stop && self.procs.is_empty() {
+                    self.exit_after_stop = false;
+                    return self.close_window();
+                }
+                Task::done(Message::PollProcs)
+            }
+            Message::StopAll => {
+                let names: Vec<String> = self.procs.iter().map(|p| p.profile.clone()).collect();
+                if names.is_empty() {
+                    return Task::none();
+                }
+                Task::batch(names.into_iter().map(|n| Task::done(Message::Stop(n))))
+            }
+            Message::WebviewClosed => {
+                // 桌面窗口关了：按配置顺带停服务（不停则 dsh 继续跑，重开窗口复用）。
+                if self.config.close_stops && !self.procs.is_empty() {
+                    Task::done(Message::StopAll)
+                } else {
+                    Task::none()
                 }
             }
             Message::PollProcs => {
@@ -1498,6 +1538,8 @@ impl Dshnext {
             } => self.push_log(profile, stream, line, ts),
             CoreEvent::Url { profile, url } => {
                 self.urls.insert(profile.clone(), url.clone());
+                // 落盘最近地址：桌面窗口（DeepseekHarness.exe）双击独立打开靠它。
+                crate::core::store::save_webui_url(&url);
                 self.sys_log(&profile, format!("WebUI 地址：{url}"));
                 let mut tasks: Vec<Task<Message>> = Vec::new();
                 // 启动耗时落表：Started→Url 的毫秒差写进 config，首页 meta 上墙。
@@ -1573,6 +1615,12 @@ impl Dshnext {
     /// 进程可能在落盘前就随窗口一起退出了。
     fn close_window(&mut self) -> Task<Message> {
         self.save_geom();
+        // close_stops：先异步停完所有实例，Stopped 里再回到这里真关窗
+        // （exit_after_stop 已置位）。taskkill 是子进程级，不能阻塞 update。
+        if self.config.close_stops && !self.procs.is_empty() && !self.exit_after_stop {
+            self.exit_after_stop = true;
+            return Task::done(Message::StopAll);
+        }
         match self.window {
             Some(id) => window::close(id),
             None => iced::exit(),
@@ -1658,6 +1706,11 @@ impl Dshnext {
         }
         if self.config.tray || self.minimized_start {
             subs.push(crate::tray::events().map(Message::Tray));
+        }
+        if self.config.close_stops && self.config.app_window {
+            // 桌面窗口被关 → WebviewClosed（按 close_stops 停服务）。只有真用
+            // 桌面窗口的用户才挂这条，空闲零订阅纪律不变。
+            subs.push(crate::core::webview::close_events().map(|_| Message::WebviewClosed));
         }
         if !self.procs.is_empty() {
             subs.push(iced::time::every(Duration::from_secs(2)).map(|_| Message::PollProcs));

@@ -1,7 +1,14 @@
+[workspace]
+members = ["webui"]
+
+[workspace.package]
+version = "0.1.11"
+edition = "2024"
+
 [package]
 name = "dshnext"
-version = "0.1.10"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "DshDesk — DeepSeek Harness 启动器（原生 Rust 重写，iced 0.14）"
 
 # feature 清单与 DESIGN.md §2 一致，与 phase0 探针保持同一组开关，
@@ -55,9 +62,19 @@ raw-window-handle = "0.6"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_HiDpi",
     "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
     "Win32_System_LibraryLoader",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
 ] }
 # 首次启动引导的目录选择（Windows 走 IFileDialog，阻塞 API 在 spawn_blocking
 # 里调）。零运行时依赖不破：rfd 静态进 exe。

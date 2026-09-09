@@ -11,7 +11,11 @@
 !define APP_NAME    "DshDesk Native"
 !define APP_ID      "Dshnext"
 !define APP_EXE     "dshnext.exe"
-!define APP_VERSION "0.1.10"
+; Desktop-window host: separate binary (workspace member webui/) with its own
+; embedded whale icon + version strings -- that's the whole point of splitting
+; it out (docks group by exe file name AND read the embedded icon/description).
+!define WEBUI_EXE   "DeepseekHarness.exe"
+!define APP_VERSION "0.1.11"
 !define UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
 
 Unicode true
@@ -35,6 +39,7 @@ RequestExecutionLevel user   ; per-user, no UAC prompt
 Section "Install"
   SetOutPath "$INSTDIR"
   File "..\target\release\${APP_EXE}"
+  File "..\target\release\${WEBUI_EXE}"
   CreateDirectory "$SMPROGRAMS\${APP_ID}"
   CreateShortCut "$SMPROGRAMS\${APP_ID}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
   CreateShortCut "$SMPROGRAMS\${APP_ID}\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
@@ -47,12 +52,15 @@ Section "Install"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
-  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 21790   ; KB, = release exe size
+  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 23640   ; KB, both exes
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 SectionEnd
 
 Section "Uninstall"
   Delete "$INSTDIR\${APP_EXE}"
+  Delete "$INSTDIR\${WEBUI_EXE}"
+  Delete "$INSTDIR\dshnext.exe.old"
+  Delete "$INSTDIR\DeepseekHarness.exe.old"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir  "$INSTDIR"
   ; The two shortcuts must be deleted by name: plain RMDir refuses a non-empty

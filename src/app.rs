@@ -235,6 +235,10 @@ pub struct Dshnext {
     pub pending_open: std::collections::HashMap<String, Instant>,
     /// 每个 profile 的 (连续崩溃次数, 上次自动重启时刻)——指数退避与上限用。
     pub crash_restarts: std::collections::HashMap<String, (u32, Instant)>,
+    /// close_stops：退出前先停完所有实例，停干净了再真关窗（异步停止不能阻塞退出）。
+    pub exit_after_stop: bool,
+    /// 启动端口被占时已尝试过「杀残留+重试」的 profile，防接管循环。
+    pub takeover: std::collections::HashSet<String>,
 
     // ---- 控制台页 ----
     /// `pages::console::ALL` 或某个 profile 名。
@@ -392,6 +396,10 @@ pub enum Message {
     Started(Result<(String, String), String>),
     Stop(String),
     Stopped(Result<String, String>),
+    /// close_stops：停掉当前所有在跑实例（关客户端/关桌面窗口时触发）。
+    StopAll,
+    /// 桌面窗口（WebView2）被关闭：按 close_stops 决定是否顺带停服务。
+    WebviewClosed,
     PollProcs,
     ProcsLoaded(Vec<ProcStatus>),
     OpenPath(String),
@@ -428,7 +436,10 @@ pub enum Message {
     /// 自更新：检查 → 下载校验 → 换身。
     CheckUpdate,
     UpdateChecked(Result<crate::core::selfupdate::UpdateInfo, String>),
-    UpdateReady(Result<(String, std::path::PathBuf), String>),
+    /// (版本提示, 启动器新 exe?, 宿主新 exe?)——两个槽按本次下载情况各自可空。
+    UpdateReady(
+        Result<(String, Option<std::path::PathBuf>, Option<std::path::PathBuf>), String>,
+    ),
     /// 下载期心跳：只为触发重绘读进度全局，本身无副作用。
     UpdateTick,
     /// 导出脱敏诊断文件（设置页「关于」卡）。
@@ -442,6 +453,7 @@ pub enum Message {
     ToggleTopmost,
     CfgUpdateUrl(String),
     CfgAutoRestart(bool),
+    CfgCloseStops(bool),
     CfgNodeMirror(String),
     CfgNpmRegistry(String),
     CfgCatalog(String),
@@ -525,6 +537,8 @@ impl Dshnext {
             restarting: std::collections::HashSet::new(),
             pending_open: std::collections::HashMap::new(),
             crash_restarts: std::collections::HashMap::new(),
+            exit_after_stop: false,
+            takeover: std::collections::HashSet::new(),
 
             log_filter: crate::pages::console::ALL.to_string(),
             auto_scroll: true,
@@ -580,6 +594,7 @@ impl Dshnext {
             || a.tray != b.tray
             || a.update_url != b.update_url
             || a.auto_restart != b.auto_restart
+            || a.close_stops != b.close_stops
             || a.node_mirror != b.node_mirror
             || a.npm_registry != b.npm_registry
             || a.plugin_catalog_url != b.plugin_catalog_url

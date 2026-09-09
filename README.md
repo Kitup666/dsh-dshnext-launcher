@@ -26,7 +26,7 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 - **系统托盘** —— 关闭到托盘常驻；开机自启（HKCU Run 键，免管理员）。
 - **目录表单** —— 启动器数据目录与 `DSH_HOME` 可分别设置；实例运行中会先弹「停止并继续」确认框（防止换到一半吃到半新半旧的模块），确认后自动停完实例接着办。
 - **单实例** —— 重复启动会把已有窗口前置然后退出（自动化旗标 `--shot` 等不受限）。
-- **自更新** —— 内置 GitHub Releases 更新源；设置页一键检查，版本比对 + SHA-256 校验（发布时附 `.sha256` 即启用）+ 运行中替换。
+- **自更新** —— 内置 GitHub Releases 更新源；设置页一键检查，版本比对 + SHA-256 校验（发布时附 `.sha256` 即启用）+ 运行中替换。启动器与桌面窗口宿主两个 exe 一起换（Release 资产：`dshnext.exe` + `DeepseekHarness.exe`，各自可附 `.sha256`）。
 - **诊断导出** —— 一键导出脱敏诊断文件（自动剔除 API Key）。
 - **细节** —— 深浅双主题（可跟随系统）、切页入场动画、Ctrl+1..6 快捷切页、无边框自绘标题栏（拖动/缩放/双击最大化）、窗口几何记忆。
 
@@ -45,7 +45,7 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 
 ## 安装
 
-从 [Releases](https://github.com/Kitup666/dsh-dshnext-launcher/releases) 下载 `Dshnext_0.1.10_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 exe 拷走即用。
+从 [Releases](https://github.com/Kitup666/dsh-dshnext-launcher/releases) 下载 `Dshnext_0.1.11_x64-setup.exe`（每用户安装，免管理员，带开始菜单项与卸载器）；或直接下绿色版 `dshnext.exe` + `DeepseekHarness.exe`（两个放同一目录）拷走即用。
 
 系统要求：Windows 10/11 x64。**无需**安装 Node.js、WebView2 或任何运行时。
 
@@ -62,14 +62,16 @@ DeepSeek Harness（dsh）的 Windows 启动器 —— **纯 Rust 原生重写**�
 ## 从源码构建
 
 ```bash
-cargo build --release        # target/release/dshnext.exe（22 MB，零依赖）
-cargo test                   # 28 例 iced_test（headless）
+cargo build --release --workspace  # dshnext.exe（22 MB）+ 桌面窗口宿主 DeepseekHarness.exe（~1.9 MB），均零依赖
+cargo test                         # 36 例（iced_test headless + 纯函数）
 cargo run --release -- --page env --shot out.png --after 4000   # 自截图
 ```
 
+桌面窗口（「打开界面」的独立窗口模式）是独立二进制 `DeepseekHarness.exe`：自带鲸鱼图标与程序名（dock/任务栏/任务管理器独立成行），也可**双击独立打开**——读启动器最近一次落盘的 WebUI 地址（`webui-url.txt`，含 token，在用户级数据目录）。绿色版使用时两个 exe 需放同一目录。
+
 Rust 1.92+（edition 2024）。构建产物静态链 CRT（`+crt-static` 已固化在 `.cargo/config.toml`），`dumpbin /DEPENDENTS` 只剩系统 DLL。
 
-NSIS 安装包：`makensis packaging/installer.nsi` → `packaging/Dshnext_0.1.10_x64-setup.exe`（装/卸全流程实测：包内 exe 与构建产物 SHA-256 一致，卸载后目录/开始菜单/注册表三处全净）。
+NSIS 安装包：`makensis packaging/installer.nsi` → `packaging/Dshnext_0.1.11_x64-setup.exe`（装/卸全流程实测：包内 exe 与构建产物 SHA-256 一致，卸载后目录/开始菜单/注册表三处全净）。
 
 ## 文档
 

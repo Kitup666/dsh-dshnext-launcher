@@ -8,6 +8,10 @@
 //! 流程：检查（比版本）→ 下载到数据目录 → SHA256 校验（fail-closed，用
 //! PowerShell Get-FileHash，零新依赖）→ 换身（运行中的 exe 改名 .old、新 exe
 //! 落到原位）→ 提示重启。下次启动顺手删 .old。
+//!
+//! 资产是**两个** exe：`dshnext.exe`（启动器，必填——旧客户端也按这个名字找）
+//! 与 `DeepseekHarness.exe`（桌面窗口宿主，可选：旧 release 没有它，缺了跳过、
+//! 由「已是最新但兄弟缺失」的补查路径自愈）。两者各自可带 `.sha256`。
 
 use serde::Deserialize;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,6 +30,9 @@ pub struct UpdateInfo {
     pub version: String,
     pub exe_url: String,
     pub sha256: Option<String>,
+    /// 桌面窗口宿主资产；旧 release 没有 → None（跳过，不报错）。
+    pub webui_url: Option<String>,
+    pub webui_sha: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -66,21 +73,70 @@ pub async fn latest(api_url: String) -> Result<UpdateInfo, String> {
         .json()
         .await
         .map_err(|e| format!("更新源不是合法的 Releases JSON：{e}"))?;
-    let exe = rel
-        .assets
-        .iter()
-        .find(|a| a.name.eq_ignore_ascii_case("dshnext.exe"))
-        .ok_or("Release 里没有 dshnext.exe 资产")?;
-    let sha = rel
-        .assets
-        .iter()
-        .find(|a| a.name.eq_ignore_ascii_case("dshnext.exe.sha256"))
-        .map(|a| a.browser_download_url.clone());
+    info_from_release(rel)
+}
+
+/// 从 Releases JSON 挑资产（纯函数供测试）。`dshnext.exe` 必填；
+/// `DeepseekHarness.exe` 可选（旧 release 没有 → None，跳过而非报错）。
+fn info_from_release(rel: Release) -> Result<UpdateInfo, String> {
+    let find = |name: &str| {
+        rel.assets
+            .iter()
+            .find(|a| a.name.eq_ignore_ascii_case(name))
+            .map(|a| a.browser_download_url.clone())
+    };
+    let exe_url = find("dshnext.exe").ok_or("Release 里没有 dshnext.exe 资产")?;
     Ok(UpdateInfo {
         version: rel.tag_name.trim_start_matches('v').to_string(),
-        exe_url: exe.browser_download_url.clone(),
-        sha256: sha,
+        sha256: find("dshnext.exe.sha256"),
+        webui_url: find("DeepseekHarness.exe"),
+        webui_sha: find("DeepseekHarness.exe.sha256"),
+        exe_url,
     })
+}
+
+/// 桌面窗口宿主的同目录路径（自更新换身与「兄弟缺失」补查共用）。
+pub fn webui_sibling() -> Option<std::path::PathBuf> {
+    Some(std::env::current_exe().ok()?.parent()?.join("DeepseekHarness.exe"))
+}
+
+/// 一步完成本次更新的全部下载校验：版本更新则换启动器（+宿主）；版本已最新但
+/// 宿主缺失且源里有 → 只补宿主。返回 (版本, 启动器新 exe?, 宿主新 exe?)，
+/// 落位交给 UI 线程的 apply_swap。
+pub async fn update_step(info: UpdateInfo) -> Result<(String, Option<std::path::PathBuf>, Option<std::path::PathBuf>), String> {
+    let dir = crate::core::store::data_dir().join("update");
+    let need_main = newer(&info.version, env!("CARGO_PKG_VERSION"));
+    let main_tmp = if need_main {
+        Some(fetch(&dir, "dshnext.exe", &info.exe_url, info.sha256.as_deref()).await?)
+    } else {
+        None
+    };
+    let missing = webui_sibling().map_or(true, |p| !p.exists());
+    let webui_tmp = match (&info.webui_url, need_main || missing) {
+        (Some(u), true) => Some(fetch(&dir, "DeepseekHarness.exe", u, info.webui_sha.as_deref()).await?),
+        _ => None,
+    };
+    Ok((info.version, main_tmp, webui_tmp))
+}
+
+/// 下载单个资产到 `目录/<name>.new` 并做 SHA256 校验（fail-closed 同 verify_hash）。
+async fn fetch(
+    dir: &std::path::Path,
+    name: &str,
+    url: &str,
+    sha_url: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    let tmp = dir.join(format!("{name}.new"));
+    download_to(url, &tmp).await?;
+    let expected = match sha_url {
+        Some(u) => Some(download_string(u).await?),
+        None => None,
+    };
+    let p = tmp.clone();
+    tokio::task::spawn_blocking(move || verify_hash(&p, expected.as_deref()))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(tmp)
 }
 
 /// 下载到 `dest`，流式逐块上报字节进度（供 UI 进度条）。
@@ -188,15 +244,29 @@ pub fn newer(remote: &str, local: &str) -> bool {
     false
 }
 
-/// 换身：当前 exe → .old，下载好的新 exe → 原位。返回提示（重启生效）。
-pub fn apply_swap(new_exe: &std::path::Path) -> Result<(), String> {
-    let cur = std::env::current_exe().map_err(|e| e.to_string())?;
+/// 单个文件的换身：`cur` → `.old`，`new` 落到 `cur` 原位。运行中的 exe
+/// 改名是 Windows 允许的（映射保留在 .old 上），宿主窗口开着也不挡。
+fn swap_file(cur: &std::path::Path, new: &std::path::Path) -> Result<(), String> {
     let old = cur.with_extension("exe.old");
     // 上次更新遗留的 .old 还在（上次没删成）会挡 rename——先清。
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(&cur, &old).map_err(|e| format!("改名旧 exe 失败：{e}"))?;
-    std::fs::copy(new_exe, &cur).map_err(|e| format!("落位新 exe 失败：{e}"))?;
-    let _ = std::fs::remove_file(new_exe);
+    std::fs::rename(cur, &old).map_err(|e| format!("改名旧 exe 失败：{e}"))?;
+    std::fs::copy(new, cur).map_err(|e| format!("落位新 exe 失败：{e}"))?;
+    let _ = std::fs::remove_file(new);
+    Ok(())
+}
+
+/// 换身：启动器与宿主各换各的（None = 这次没带该资产）。启动器换失败即 Err；
+/// 宿主换失败不连带回滚（协议只有两行、极稳定，新旧混跑无碍），由调用方提示。
+pub fn apply_swap(new_main: Option<&std::path::Path>, new_webui: Option<&std::path::Path>) -> Result<(), String> {
+    let cur = std::env::current_exe().map_err(|e| e.to_string())?;
+    if let Some(n) = new_main {
+        swap_file(&cur, n)?;
+    }
+    if let Some(n) = new_webui {
+        let webui = cur.parent().ok_or("current_exe 没有父目录")?.join("DeepseekHarness.exe");
+        swap_file(&webui, n)?;
+    }
     Ok(())
 }
 
@@ -204,5 +274,45 @@ pub fn apply_swap(new_exe: &std::path::Path) -> Result<(), String> {
 pub fn cleanup_old() {
     if let Ok(cur) = std::env::current_exe() {
         let _ = std::fs::remove_file(cur.with_extension("exe.old"));
+        if let Some(dir) = cur.parent() {
+            let _ = std::fs::remove_file(dir.join("DeepseekHarness.exe.old"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{info_from_release, Asset, Release};
+
+    fn rel(names: &[&str]) -> Release {
+        Release {
+            tag_name: "v9.9.9".into(),
+            assets: names
+                .iter()
+                .map(|n| Asset {
+                    name: (*n).into(),
+                    browser_download_url: format!("https://d/{n}"),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn webui_asset_optional() {
+        // 旧 release 只有启动器资产：webui_url=None，而不是报错。
+        let i = info_from_release(rel(&["dshnext.exe", "dshnext.exe.sha256"])).unwrap();
+        assert_eq!(i.exe_url, "https://d/dshnext.exe");
+        assert!(i.webui_url.is_none() && i.webui_sha.is_none());
+        // 新 release 两个都有（大小写不敏感按 GitHub 原样名匹配）。
+        let i = info_from_release(rel(&[
+            "dshnext.exe",
+            "DeepseekHarness.exe",
+            "DeepseekHarness.exe.sha256",
+        ]))
+        .unwrap();
+        assert_eq!(i.webui_url.as_deref(), Some("https://d/DeepseekHarness.exe"));
+        assert_eq!(i.webui_sha.as_deref(), Some("https://d/DeepseekHarness.exe.sha256"));
+        // 启动器资产永远必填。
+        assert!(info_from_release(rel(&["DeepseekHarness.exe"])).is_err());
     }
 }

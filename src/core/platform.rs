@@ -105,3 +105,60 @@ pub fn probe_port(port: u16) -> PortProbe {
         _ => PortProbe::Other,
     }
 }
+
+/// 从 `netstat -ano` 文本里找监听 `port` 的属主 PID。
+/// 行形如 `TCP  127.0.0.1:3080  0.0.0.0:0  LISTENING  12345`——列序是
+/// 协议/本地/远端/状态/PID，状态在 f[3]（写成 f[2] 永远匹配不上，
+/// 2026-09-09 实测踩过，测试焊死）。
+fn parse_netstat_pid(text: &str, port: u16) -> Option<u32> {
+    let suffix = format!(":{port}");
+    text.lines().find_map(|line| {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() >= 5 && f[0] == "TCP" && f[3] == "LISTENING" && f[1].ends_with(&suffix) {
+            f[4].parse().ok()
+        } else {
+            None
+        }
+    })
+}
+
+/// 结束监听 `port` 的进程树（上次崩溃/退出残留的 dsh node 树），返回被杀的 PID。
+///
+/// 用 `netstat -ano` 找 LISTENING 行的属主 PID，再 `taskkill /T /F` 杀整棵树——
+/// 与 procman::stop 同款手段，零新依赖。找不到属主返回 None（可能刚好已退出）。
+pub fn kill_port_owner(port: u16) -> Option<u32> {
+    use std::os::windows::process::CommandExt;
+    let out = Command::new("netstat")
+        .args(["-ano", "-p", "TCP"])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let pid = parse_netstat_pid(&text, port)?;
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(0x0800_0000)
+        .output();
+    Some(pid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_netstat_pid;
+
+    #[test]
+    fn netstat_pid_picks_listening_owner() {
+        let text = "
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    127.0.0.1:3080         0.0.0.0:0              LISTENING       18620
+  TCP    127.0.0.1:3080         127.0.0.1:52111        ESTABLISHED     18620
+  TCP    127.0.0.1:52111        127.0.0.1:3080         ESTABLISHED     400
+  TCP    [::]:135               [::]:0                 LISTENING       900
+";
+        assert_eq!(parse_netstat_pid(text, 3080), Some(18620));
+        assert_eq!(parse_netstat_pid(text, 135), Some(900));
+        assert_eq!(parse_netstat_pid(text, 3081), None);
+        // 端口号后缀不能误配（13080 不该命中 :3080）
+        assert_eq!(parse_netstat_pid("  TCP    0.0.0.0:13080    0.0.0.0:0    LISTENING    7\n", 3080), None);
+    }
+}
