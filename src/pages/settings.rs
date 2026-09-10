@@ -284,10 +284,10 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
                 pal
             ),
             space::vertical().height(6.0),
-            widgets::field(
+             widgets::field(
                 "插件商店目录（catalog.json）",
                 iced::widget::container(widgets::input(
-                    "留空则只用 npm 上的 dsh-plugin 关键词作为来源",
+                    "留空使用默认策展目录（awesome-dsh-plugin）",
                     &app.cfg_draft.plugin_catalog_url,
                     Message::CfgCatalog,
                     true,
@@ -295,7 +295,7 @@ fn sources<'a>(app: &'a Dshnext, pal: &'static Palette) -> Element<'a, Message> 
                 ))
                 .width(Length::Fixed(420.0))
                 .into(),
-                Some("填入第三方插件目录的 JSON 地址后，插件市场会把它和 npm 结果合并展示。"),
+                Some("留空 = 官方策展目录 awesome-dsh-plugin.com/plugins.json；填自定义地址则改用它。两种都会与 npm 结果合并展示。"),
                 pal
             ),
         ]

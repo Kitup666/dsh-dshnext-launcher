@@ -54,6 +54,15 @@ pub fn profiles_root() -> PathBuf {
     home_dir().join("profiles")
 }
 
+/// 统一的 pnpm store：落在软件数据目录下，而不是系统盘或项目盘根
+/// （pnpm 默认按项目所在盘选，会跑到 `D:\.pnpm-store`）。
+///
+/// 所有 pnpm 入口（DshNext 的插件操作、以及 harness 进程里装的 dsh-market）
+/// 都用它，否则两边的 store 不一致会触发 `ERR_PNPM_UNEXPECTED_STORE`。
+pub fn pnpm_store_dir() -> PathBuf {
+    data_dir().join(".pnpm-store")
+}
+
 /// 便携 node + 托管 dsh 前置到 PATH 的子进程环境
 pub fn child_path() -> String {
     let mut parts: Vec<String> = Vec::new();

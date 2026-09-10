@@ -44,7 +44,7 @@ pub fn render(
     s.push_str(&format!(
         "  插件目录：{}\n\n",
         if cfg.plugin_catalog_url.is_empty() {
-            "未设置".to_string()
+            format!("默认（{}）", crate::core::plugins::DEFAULT_CATALOG_URL)
         } else {
             cfg.plugin_catalog_url.clone()
         }

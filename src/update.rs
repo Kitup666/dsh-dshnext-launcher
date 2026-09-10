@@ -1001,6 +1001,7 @@ impl Dshnext {
 
             // ---------- 插件 ----------
             Message::RefreshPlugins => {
+                self.problems.clear();
                 if self.selected.is_empty() {
                     self.plugins.clear();
                     return Task::none();
@@ -1039,6 +1040,7 @@ impl Dshnext {
                     Ok(items) => {
                         self.market = items;
                         self.market_loaded = true;
+                        self.market_page = 0;
                     }
                     Err(e) => self.notify(ToastKind::Err, format!("拉取插件市场失败：{e}")),
                 }
@@ -1051,8 +1053,77 @@ impl Dshnext {
                 }
                 Task::none()
             }
+            Message::SetMarketSort(sort) => {
+                self.market_sort = sort;
+                self.market_page = 0;
+                Task::none()
+            }
+            Message::SetMarketPage(page) => {
+                self.market_page = page;
+                Task::none()
+            }
+            Message::TogglePlugin(name, disabled) => {
+                if self.selected.is_empty() {
+                    return Task::none();
+                }
+                self.busy = Some(format!(
+                    "正在{} {name}…",
+                    if disabled { "禁用" } else { "启用" }
+                ));
+                let profile = self.selected.clone();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            crate::core::patch::set_disabled(&profile, &name, disabled)
+                        })
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |r| Message::OpDone("切换插件", r),
+                )
+                .chain(Task::done(Message::RefreshPlugins))
+            }
+            Message::DiagnosePlugins => {
+                if self.selected.is_empty() {
+                    self.notify(ToastKind::Err, "请先选择一个版本");
+                    return Task::none();
+                }
+                self.busy = Some("正在诊断插件…".into());
+                let profile = self.selected.clone();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || crate::core::plugins::diagnose(&profile))
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    Message::PluginsDiagnosed,
+                )
+            }
+            Message::PluginsDiagnosed(result) => {
+                self.busy = None;
+                match result {
+                    Ok(problems) => {
+                        let errors = problems.iter().filter(|p| p.severity == "error").count();
+                        self.problems = problems;
+                        if self.problems.is_empty() {
+                            self.notify(ToastKind::Ok, "未发现会导致启动失败的插件");
+                        } else {
+                            self.notify(
+                                ToastKind::Warn,
+                                format!("发现 {} 处问题（{} 处会导致启动失败）", self.problems.len(), errors),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        self.problems.clear();
+                        self.notify(ToastKind::Err, format!("诊断失败：{e}"));
+                    }
+                }
+                Task::none()
+            }
             Message::Query(q) => {
                 self.query = q;
+                self.market_page = 0;
                 Task::none()
             }
             Message::InstallPlugin(source) => {

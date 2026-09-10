@@ -64,6 +64,15 @@ pub enum PluginTab {
     Market,
 }
 
+/// 插件市场的排序方式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarketSort {
+    /// 按星星数降序。
+    Stars,
+    /// 按包名（id）升序。
+    Id,
+}
+
 /// 首次启动引导里可「浏览」选择的两个目录字段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickField {
@@ -221,8 +230,12 @@ pub struct Dshnext {
     pub plugins: Vec<PluginInfo>,
     pub market: Vec<MarketItem>,
     pub market_loaded: bool,
+    pub market_sort: MarketSort,
+    pub market_page: usize,
     pub plugin_tab: PluginTab,
     pub query: String,
+    /// 离线诊断结果（可能导致启动失败的问题），按需刷新。
+    pub problems: Vec<crate::core::plugins::Problem>,
 
     // ---- 运行守护 ----
     /// 用户点了「停止」的 profile：Exit 事件到达时据此区分主动停 vs 崩溃。
@@ -418,8 +431,17 @@ pub enum Message {
     LoadMarket,
     MarketLoaded(Result<Vec<MarketItem>, String>),
     SetPluginTab(PluginTab),
+    /// 切换市场排序（星星 / 名称）。
+    SetMarketSort(MarketSort),
+    /// 跳转到市场第 N 页（0 基）。
+    SetMarketPage(usize),
     Query(String),
     InstallPlugin(String),
+    /// 离线扫描当前版本，找会导致启动失败的问题。
+    DiagnosePlugins,
+    PluginsDiagnosed(Result<Vec<crate::core::plugins::Problem>, String>),
+    /// 在用户补丁层里禁用/启用一个插件（对齐 dsh-market 的 patch 机制）。
+    TogglePlugin(String, bool),
 
     // 控制台
     SetLogFilter(String),
@@ -530,8 +552,11 @@ impl Dshnext {
             plugins: Vec::new(),
             market: Vec::new(),
             market_loaded: false,
+            market_sort: MarketSort::Stars,
+            market_page: 0,
             plugin_tab: PluginTab::Installed,
             query: String::new(),
+            problems: Vec::new(),
 
             stopping: std::collections::HashSet::new(),
             restarting: std::collections::HashSet::new(),

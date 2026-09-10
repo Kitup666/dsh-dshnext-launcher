@@ -88,6 +88,9 @@ pub async fn start(
     .current_dir(&cwd)
     .env("PATH", child_path())
     .env("DSH_HOME", home_dir())
+    // 让 harness 里装的 dsh-market 也用同一个 pnpm store（否则与 DshNext 的
+    // 插件操作 store 不一致，会撞 ERR_PNPM_UNEXPECTED_STORE）。
+    .env("npm_config_store_dir", crate::core::envres::pnpm_store_dir())
     .creation_flags(0x0800_0000);
     if !cfg.api_key.trim().is_empty() {
         cmd.env("DEEPSEEK_API_KEY", cfg.api_key.trim());

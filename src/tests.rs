@@ -11,10 +11,10 @@
 // update 返回的 Task 在测试里本就该丢弃（不驱动运行时），逐条 `let _ =` 太吵。
 #![allow(unused_must_use)]
 
-use crate::app::{Dshnext, Message, Mode, Onboarding, PickField, PluginTab};
+use crate::app::{Dshnext, MarketSort, Message, Mode, Onboarding, PickField, PluginTab};
 use crate::core::envres::EnvStatus;
 use crate::core::event::{CoreEvent, LogStream};
-use crate::core::plugins::PluginInfo;
+use crate::core::plugins::{MarketItem, PluginInfo};
 use crate::core::profiles::ProfileInfo;
 use crate::pages::Page;
 use crate::ui::modal::Dialog;
@@ -217,6 +217,7 @@ fn installed_plugin_row_uninstall_opens_dialog() {
     a.plugins = vec![PluginInfo {
         name: "@scope/dsh-foo".into(),
         version: "1.2.3".into(),
+        disabled: false,
     }];
     let msg = one(
         click(&a, "卸载"),
@@ -225,6 +226,66 @@ fn installed_plugin_row_uninstall_opens_dialog() {
     );
     a.update(msg);
     assert!(matches!(a.dialog, Some(Dialog::RemovePlugin(_))));
+}
+
+#[test]
+fn market_pagination_and_sort_controls() {
+    let mut a = seeded_app();
+    a.page = Page::Plugins;
+    a.plugin_tab = PluginTab::Market;
+    a.market_loaded = true;
+    // 130 条 → 3 页（每页 60）。
+    a.market = (0..130)
+        .map(|i| MarketItem {
+            name: format!("pkg-{i:03}"),
+            source: format!("pkg-{i:03}"),
+            description: String::new(),
+            stars: i as i64,
+            version: String::new(),
+            origin: "catalog".into(),
+            page: format!("https://example.com/pkg-{i:03}"),
+        })
+        .collect();
+
+    let msg = one(
+        click(&a, "下一页"),
+        |m| matches!(m, Message::SetMarketPage(1)),
+        "SetMarketPage(1)",
+    );
+    a.update(msg);
+    assert_eq!(a.market_page, 1);
+
+    let msg = one(
+        click(&a, "按名称"),
+        |m| matches!(m, Message::SetMarketSort(MarketSort::Id)),
+        "SetMarketSort(Id)",
+    );
+    a.update(msg);
+    assert!(matches!(a.market_sort, MarketSort::Id));
+    assert_eq!(a.market_page, 0, "切换排序应回到第一页");
+}
+
+#[test]
+fn market_row_page_button_opens_browser() {
+    let mut a = seeded_app();
+    a.page = Page::Plugins;
+    a.plugin_tab = PluginTab::Market;
+    a.market_loaded = true;
+    a.market = vec![MarketItem {
+        name: "pkg".into(),
+        source: "pkg".into(),
+        description: String::new(),
+        stars: 3,
+        version: String::new(),
+        origin: "catalog".into(),
+        page: "https://awesome-dsh-plugin.com/p/o/r/".into(),
+    }];
+    let msg = one(
+        click(&a, "插件页"),
+        |m| matches!(m, Message::OpenPath(u) if u == "https://awesome-dsh-plugin.com/p/o/r/"),
+        "OpenPath(page)",
+    );
+    a.update(msg);
 }
 
 // ---------------------------------------------------------------- 控制台

@@ -19,7 +19,7 @@ pub struct Config {
     pub node_mirror: String,
     /// npm registry，空串 = 官方 https://registry.npmjs.org
     pub npm_registry: String,
-    /// DSH 插件商店 catalog.json 地址，空串 = 不启用
+    /// DSH 插件商店 catalog.json 地址，空串 = 默认策展目录（awesome-dsh-plugin）
     pub plugin_catalog_url: String,
     /// 启动后 WebUI 呈现方式："window" | "browser"
     pub open_mode: String,
