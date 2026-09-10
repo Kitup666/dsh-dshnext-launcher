@@ -8,10 +8,17 @@ use std::sync::{Arc, Mutex};
 /// npm 官方源：留空时的默认，也是镜像缺版本时的回落目标。
 pub const OFFICIAL_REGISTRY: &str = "https://registry.npmjs.org";
 
-/// 判断 npm 失败是不是「registry 上找不到该版本」——镜像同步滞后时就是这个。
+/// 判断 npm 失败是不是「registry/CDN 上拿不到这个包或版本」——镜像同步滞后
+/// 的两种形态都得认：① ETARGET/notarget（元数据缺版本）；② 元数据有、**子包
+/// tarball 下载 404**（`npm error 404 Not Found - GET https://cdn.npmmirror.com/
+/// .../<pkg>-<ver>.tgz`，2026-09-09 dsh 0.1.5-alpha.2 实锤：npmmirror 的
+/// dsh-chunked-list 包没同步）。两类都回落官方重试。
 fn is_missing_version(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
-    e.contains("etarget") || e.contains("notarget") || e.contains("no matching version")
+    e.contains("etarget")
+        || e.contains("notarget")
+        || e.contains("no matching version")
+        || (e.contains("npm error 404") && e.contains(".tgz"))
 }
 
 /// 把一段文本按行转发为 EnvProgress 事件
@@ -406,6 +413,10 @@ mod tests {
             "命令退出码：1\nnpm error code ETARGET\nnpm error notarget No matching version found for @deepseek-ai/dsh-hooks-codex@^0.1.3-alpha.2."
         ));
         assert!(is_missing_version("npm ERR! 404 ... no matching version"));
+        // tarball 404（npmmirror 子包没同步）：也要回落官方。
+        assert!(is_missing_version(
+            "npm error code E404\nnpm error 404 Not Found - GET https://cdn.npmmirror.com/packages/%40deepseek-ai/dsh-chunked-list/0.1.5-alpha.2/dsh-chunked-list-0.1.5-alpha.2.tgz"
+        ));
         // 别的失败（权限/网络）不该触发回落官方重试
         assert!(!is_missing_version("命令退出码：1\nEPERM operation not permitted"));
         assert!(!is_missing_version("命令退出码：1\nENOTFOUND registry.invalid"));

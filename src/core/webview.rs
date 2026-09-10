@@ -382,6 +382,15 @@ fn standalone_url() -> Option<String> {
 /// 宿主入口（DeepseekHarness.exe 的 main 调，永不返回）。双模式见模块文档。
 pub fn host_main() -> ! {
     IS_HOST.store(true, std::sync::atomic::Ordering::Relaxed);
+    // DPI 感知必须在任何 HWND 之前设：宿主不跑 winit（启动器的 PMv2 是它设的），
+    // 不设的话系统按 96 DPI 虚拟化渲染再位图拉伸 1.25x，整窗文字发糊（2026-09-10
+    // 用户实测「比网页端糊很多」）。manifest 声明会 14001（见 webui/build.rs），
+    // 这里走 winit 同款运行时 API。失败（极少）退回 system aware 兜底。
+    unsafe {
+        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2).is_err() {
+            let _ = SetProcessDPIAware();
+        }
+    }
     let piped = stdin_is_pipe();
     if !piped {
         // 独立模式：已有桌面窗口（启动器拉的或另一个独立实例）→ 前置复用后退出。
@@ -520,6 +529,21 @@ fn build_window() -> HWND {
         );
     }
     set_window_aumid(hwnd, "DeepseekHarness");
+
+    // PMv2 之后 CreateWindowEx 的宽高是物理像素；1200×800 是逻辑默认值，按窗口
+    // 所在显示器的 DPI 放大，保持用户熟悉的默认大小（此前系统替我们拉伸）。
+    unsafe {
+        let s = GetDpiForWindow(hwnd).max(96) as f64 / 96.0;
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            (1200.0 * s).round() as i32,
+            (800.0 * s).round() as i32,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
 
     // 悬浮层窗口类：ULW 内容不走 WM_PAINT，类只是挂 wndproc。
     let badge_class = to_wide(BADGE_CLASS);
@@ -704,7 +728,8 @@ unsafe extern "system" fn wndproc(
             }
         }
         // 手柄环刻意一个像素都不画：返回 1 阻止系统拿类刷擦成不透明，环带保持
-        // alpha=0 → 透出桌面（透明外圈）。WM_PAINT 交给 DefWindowProc 只验证不画。
+        // alpha=0 → 透出桌面（透明外圈，用户确认设计如此——2026-09-09 那次「白圈」
+        // 是截图时桌面本来就白，误诊）。WM_PAINT 交给 DefWindowProc 只验证不画。
         WM_ERASEBKGND => LRESULT(1),
         // 窗口一动（拖动/贴靠/最大化）悬浮层必须跟上：owned 弹窗位置不随主窗走。
         WM_MOVE => {
@@ -731,6 +756,22 @@ unsafe extern "system" fn wndproc(
             let s = GetDpiForWindow(hwnd).max(96) as f64 / 96.0;
             mmi.ptMinTrackSize.x = (MIN_TRACK * s).round() as i32;
             mmi.ptMinTrackSize.y = (MIN_TRACK * s).round() as i32;
+            LRESULT(0)
+        }
+        // 跨显示器拖动（DPI 不同）：按系统建议矩形缩放，内容比例/清晰度才对。
+        WM_DPICHANGED => {
+            let sug = unsafe { &*(lparam.0 as *const RECT) };
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    sug.left,
+                    sug.top,
+                    sug.right - sug.left,
+                    sug.bottom - sug.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
             LRESULT(0)
         }
         WM_TIMER => {
@@ -770,8 +811,14 @@ unsafe extern "system" fn wndproc(
                 } else {
                     // 内容圆角半径（原为 16−GRIP=10，用户嫌大改 CONTENT_RADIUS）。
                     let rad = (CONTENT_RADIUS * scale).round() as i32;
-                    let rgn = CreateRoundRectRgn(0, 0, cw + 1, chh + 1, rad * 2, rad * 2);
-                    let _ = SetWindowRgn(child, Some(rgn), true);
+                    // SetWindowRgn 会复制形状，HRGN 用完即删（旧代码每次 WM_SIZE 漏一个）。
+                    if let Some(rgn) = rounded_region(cw, chh, rad, 16) {
+                        let _ = SetWindowRgn(child, Some(rgn), true);
+                        // SetWindowRgn 已复制形状；HRGN 用完即删（旧实现每次 WM_SIZE 漏一个）。
+                        unsafe {
+                            let _ = DeleteObject(HGDIOBJ(rgn.0));
+                        }
+                    }
                 }
             }
             place_overlays(hwnd);
@@ -806,6 +853,37 @@ fn overlay_rects(main: HWND) -> [(i32, i32, i32, i32); 3] {
             (wr.left, wr.top, bw, bw),      // 1 左上：最小化
             (wr.left + (w - pw) / 2, wr.top + pt, pw, ph), // 2 顶部居中：横条
         ]
+    }
+}
+
+/// 内容四角的圆角区域。**不能直接用 `CreateRoundRectRgn`**：它是硬边二值遮罩，
+/// 5px 半径的圆弧只有 3~4 个采样点，用户看到的就是阶梯（「倒角像素感很重」）。
+/// 这里四角各画 `STEPS` 段圆弧，步长约 0.5px，肉眼平滑——抗锯齿靠细分不靠 alpha
+/// （子窗口没透明通道可用，形状只能是 0/1）。
+fn rounded_region(w: i32, h: i32, r: i32, steps: u32) -> Option<HRGN> {
+    let r = r.max(1).min(w / 2).min(h / 2) as f64;
+    // 中心按顺时针：左上→右上→右下→左下。
+    let centers = [
+        (r, r),
+        ((w as f64 - r), r),
+        ((w as f64 - r), (h as f64 - r)),
+        (r, (h as f64 - r)),
+    ];
+    let mut pts = Vec::with_capacity(steps as usize + 1);
+    for k in 0..steps * 4 {
+        // 从左边中点起、顺时针扫一整圈：θ=π 时恰是 (0, r)。
+        let theta = std::f64::consts::PI + k as f64 * (std::f64::consts::PI / (2.0 * steps as f64));
+        let (cx, cy) = centers[(k / steps) as usize % 4];
+        pts.push(POINT {
+            x: (cx + r * theta.cos()).round() as i32,
+            y: (cy + r * theta.sin()).round() as i32,
+        });
+    }
+    let rgn = unsafe { CreatePolygonRgn(&pts, ALTERNATE) };
+    if rgn.is_invalid() {
+        None
+    } else {
+        Some(rgn)
     }
 }
 
@@ -1037,21 +1115,36 @@ fn render_badge(hwnd: HWND, i: usize, t: f32, hovered: bool, w: usize, h: usize)
 
 /// 渲染顶部横条：半透明胶囊，滑入（从上方 8px）+ 淡入；悬停更亮、置顶变蓝。
 /// 烘一版横条底图（满 alpha、无滑入）：和角标同款的胶囊笔画 + 同色外发光，
-/// 统一品牌蓝；置顶比悬停更亮、发光更强。
+/// 统一品牌蓝；置顶比悬停更亮、发光更强，**另铺一圈深蓝内描边**（先画更粗的
+/// 深蓝胶囊再叠正常内胆，露出的环就是描边）——单靠亮度/发光区分不出置顶态
+/// （2026-09-10 用户反馈），要一眼可见的形状差异。
 fn pill_master(dpi: u32, w: usize, h: usize, hov: usize, pinned: usize) -> Vec<u8> {
     let scale = dpi.max(96) as f64 / 96.0;
     let mut img = Img::new(w, h);
     let r = (PILL_H * scale / 2.0) as f32;
     let cy = h as f32 / 2.0;
     let (a, glow) = match (hov, pinned) {
-        (0, 0) => (0.72f32, 0.28f32),
-        (1, 0) => (0.95, 0.42),
-        (0, 1) => (0.85, 0.4),
-        _ => (1.0, 0.55),
+        (0, 0) => (0.72f32, 0.22f32),
+        (1, 0) => (0.95, 0.32),
+        (0, 1) => (0.85, 0.28),
+        _ => (1.0, 0.38),
     };
-    let soft = 3.0 * scale as f32;
-    img.glow_segment(r, cy, w as f32 - r, cy, r, soft, PIN_RGB, glow);
-    img.segment(r, cy, w as f32 - r, cy, r, PIN_RGB, a);
+    // 发光半径原先 soft=3（可见晕约 9px）把 overlay 左右裁成平头；收窄并给
+    // 圆头+光晕留 pad，胶囊不再贴 overlay 窗口边。
+    let soft = 1.35 * scale as f32;
+    let ax = r + soft * 3.0 + 1.0;
+    let bx = (w as f32 - ax).max(ax + 1.0);
+    img.glow_segment(ax, cy, bx, cy, r, soft, PIN_RGB, glow);
+    if pinned != 0 {
+        // 深蓝内描边：先铺满一圈深蓝底胶囊（#1B2A8F 级别），正常内胆半径缩进
+        // 2px 叠上去，四周留出的深蓝环就是状态标记（往外加会超出悬浮窗被裁）。
+        let outline = [0.106, 0.165, 0.561];
+        let t = 2.0 * scale as f32;
+        img.segment(ax, cy, bx, cy, r, outline, 0.95);
+        img.segment(ax, cy, bx, cy, (r - t).max(1.0), PIN_RGB, a);
+    } else {
+        img.segment(ax, cy, bx, cy, r, PIN_RGB, a);
+    }
     img.to_bgra()
 }
 

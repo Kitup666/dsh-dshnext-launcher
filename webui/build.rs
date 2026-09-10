@@ -3,7 +3,9 @@
 // [package.metadata.winresource] 里——winresource 自动读取。dock/任务管理器/
 // 资源管理器显示的就是这套内嵌信息，这正是宿主必须独立成 bin 的原因（硬链接
 // 换皮的 exe 与启动器同字节，图标/描述永远甩不开）。
-// manifest 与启动器同款（asInvoker、无 DPI 声明——DPI 感知由窗口自己设）。
+// manifest 与启动器同款（asInvoker）。⚠️ 别往里加 <application><windowsSettings>
+// 的 DPI 声明：rc/SXS 对那段命名空间组合会直接 14001 拒启（2026-09-10 实测），
+// DPI 感知改在 host_main 里运行时设（同 winit 的做法）。
 fn main() {
     println!("cargo:rerun-if-changed=../assets/icons/webui.ico");
     println!("cargo:rerun-if-changed=Cargo.toml");
