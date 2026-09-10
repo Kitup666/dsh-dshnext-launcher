@@ -15,7 +15,7 @@
 ; embedded whale icon + version strings -- that's the whole point of splitting
 ; it out (docks group by exe file name AND read the embedded icon/description).
 !define WEBUI_EXE   "DeepseekHarness.exe"
-!define APP_VERSION "0.1.12"
+!define APP_VERSION "0.1.13"
 !define UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
 
 Unicode true
@@ -52,7 +52,7 @@ Section "Install"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
-  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 23640   ; KB, both exes
+  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" 23620   ; KB, both exes
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 SectionEnd
 
