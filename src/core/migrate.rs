@@ -201,6 +201,13 @@ fn copy_tree(
     errs
 }
 
+/// profile 复制（profiles::copy）用的包装：走同一套 junction 感知通路，但
+/// 不碰迁移的进度计数器（COPIED/TOTAL 归迁移进度条，复制实例不该把它
+/// 顶起来）。进度上报以后要的话再单独开一对计数器。
+pub fn copy_tree_for_copy(src: &Path, dst: &Path) -> Vec<String> {
+    copy_tree(src, dst, &[], None)
+}
+
 /// 数 `src` 下非目录条目（文件 + 链接）总量，给进度条当分母。`skip` 与
 /// copy_tree 同口径。
 fn count_entries(src: &Path, skip: &[PathBuf]) -> u64 {

@@ -15,7 +15,7 @@
 ; embedded whale icon + version strings -- that's the whole point of splitting
 ; it out (docks group by exe file name AND read the embedded icon/description).
 !define WEBUI_EXE   "DeepseekHarness.exe"
-!define APP_VERSION "0.1.13"
+!define APP_VERSION "0.1.14"
 !define UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
 
 Unicode true

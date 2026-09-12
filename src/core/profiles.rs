@@ -128,7 +128,30 @@ pub fn copy(src: &str, dst: &str) -> Result<(), String> {
     if to.exists() {
         return Err(format!("版本 {dst} 已存在"));
     }
-    copy_dir_recursive(&from, &to)?;
+    // node_modules 必须一起复制（hoisted 依赖树是真实目录，2026-09-13 用户
+    // 实锤：跳过它新实例起不来——dsh 启动不装依赖）。树里的 junction 走
+    // migrate 的重建通路（fs::copy 对目录链接直接拒绝访问）。
+    let errs = crate::core::migrate::copy_tree_for_copy(&from, &to);
+    if !errs.is_empty() {
+        // 半截目标留着只会让重试撞「已存在」，先清掉再报错。
+        let _ = std::fs::remove_dir_all(&to);
+        return Err(format!(
+            "复制中断（已回滚，可重试）：{} 项失败，首个：{}",
+            errs.len(),
+            errs[0]
+        ));
+    }
+    // package.json 的 name 跟着新身份走（同 rename）。
+    let pkg_path = to.join("package.json");
+    if let Ok(raw) = std::fs::read(&pkg_path) {
+        if let Ok(mut pkg) = serde_json::from_slice::<serde_json::Value>(&raw) {
+            pkg["name"] = serde_json::Value::String(format!("dsh-profile-{}", dst.trim()));
+            let _ = std::fs::write(
+                &pkg_path,
+                serde_json::to_string_pretty(&pkg).unwrap_or_else(|_| "{}".into()),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -163,24 +186,4 @@ pub fn delete(name: &str) -> Result<(), String> {
         return Err(format!("版本 {name} 不存在"));
     }
     std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())
-}
-
-fn copy_dir_recursive(from: &PathBuf, to: &PathBuf) -> Result<(), String> {
-    std::fs::create_dir_all(to).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(from).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let p = entry.path();
-        let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
-        let dest = to.join(&name);
-        if p.is_dir() {
-            // profile 里的 node_modules 不复制（pnpm 依赖树，重装即可）
-            if name == "node_modules" {
-                continue;
-            }
-            copy_dir_recursive(&p, &dest)?;
-        } else {
-            std::fs::copy(&p, &dest).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
 }

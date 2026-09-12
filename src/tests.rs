@@ -759,6 +759,55 @@ fn migrate_rewrites_junction_targets() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+// ---------- 复制实例（profiles::copy，2026-09-13 修：node_modules 必须一起搬） ----------
+
+#[test]
+#[cfg(windows)]
+fn profile_copy_carries_node_modules_and_links() {
+    // 2026-09-13 用户实锤：复制跳过 node_modules，新实例起不来（dsh 启动不装
+    // 依赖）。复制必须全量携带，树里的 junction 走重建通路。
+    let _g = OB_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join("dshnext-tests-profcopy");
+    let _ = std::fs::remove_dir_all(&root);
+    let home = root.join("home");
+    crate::core::envres::set_home_dir(home.clone());
+
+    // 源实例：package.json + node_modules（深嵌套）+ 树内一个 junction。
+    let src = home.join("profiles").join("src");
+    crate::core::profiles::create("src").unwrap();
+    let nm = src.join("node_modules").join("@deepseek-ai").join("dsh-base");
+    std::fs::create_dir_all(&nm).unwrap();
+    std::fs::write(nm.join("index.js"), b"deep").unwrap();
+    let linked = src.join("node_modules").join("linked");
+    std::fs::create_dir_all(home.join("elsewhere")).unwrap();
+    std::fs::write(home.join("elsewhere").join("real.txt"), b"z").unwrap();
+    junction::create(home.join("elsewhere"), &linked).unwrap();
+
+    crate::core::profiles::copy("src", "dst").unwrap();
+
+    // node_modules 深处文件在；junction 重建为链接且目标原样（无 remap）；
+    // package.json 的 name 跟新身份走。
+    let dst_nm = home.join("profiles").join("dst").join("node_modules");
+    assert!(
+        dst_nm.join("@deepseek-ai").join("dsh-base").join("index.js").exists(),
+        "依赖树应全量复制"
+    );
+    let new_link = dst_nm.join("linked");
+    assert!(new_link.join("real.txt").exists(), "junction 应可走通");
+    assert!(std::fs::symlink_metadata(&new_link).unwrap().file_type().is_symlink());
+    let pkg: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(home.join("profiles").join("dst").join("package.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(pkg["name"], "dsh-profile-dst", "package.json name 应同步");
+
+    // 错误分支：不存在的源应报错（吞错会让 UI 误报成功）。
+    assert!(crate::core::profiles::copy("no-such", "x").is_err());
+
+    crate::core::envres::set_home_dir(crate::core::store::boot_dir().join("home"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 #[test]
 fn dirs_edit_prefill_close_and_guard() {
     let _g = OB_LOCK.lock().unwrap();
